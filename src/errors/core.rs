@@ -129,6 +129,16 @@ impl fmt::Debug for Error {
     }
 }
 
+impl From<Error> for String {
+    fn from(err: Error) -> String {
+        if err.message.is_empty() {
+            format!("[{}]", err.kind)
+        } else {
+            format!("[{}] {}", err.kind, err.message)
+        }
+    }
+}
+
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.source.as_ref().map(|e| e.as_ref() as _)
