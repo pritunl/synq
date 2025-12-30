@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 arboard = "3.6.1"
+backtrace = "0.3.76"
 futures = "0.3.31"
 prost = "0.14.1"
 scopeguard = "1.2.0"
