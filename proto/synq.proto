@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package synq;
+
+service SynqService {
+  rpc StreamScroll(stream ScrollEvent) returns (stream ScrollEvent);
+  rpc StreamClipboard(stream ClipboardEvent) returns (stream ClipboardEvent);
+}
+
+message ScrollEvent {
+  int32 delta_x = 1;
+  int32 delta_y = 2;
+}
+
+message ClipboardEvent {
+  string client = 1;
+  bytes data = 2;
+}
+
+message Event {
+  oneof event {
+    ScrollEvent scroll = 1;
+    ClipboardEvent clipboard = 2;
+  }
+}
