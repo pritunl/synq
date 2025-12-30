@@ -25,7 +25,7 @@ impl Error {
         }
     }
 
-    pub fn with_message(mut self, message: impl Into<String>) -> Self {
+    pub fn with_msg(mut self, message: impl Into<String>) -> Self {
         self.message = message.into();
         self
     }
@@ -60,20 +60,20 @@ impl Error {
         }
     }
 
-    pub fn with_context(mut self, key: impl Into<String>, value: impl ToString) -> Self {
+    pub fn with_ctx(mut self, key: impl Into<String>, value: impl ToString) -> Self {
         self.context.insert(key.into(), value.to_string());
         self
     }
 
-    pub fn set_context(&mut self, key: impl Into<String>, value: impl ToString) {
+    pub fn set_ctx(&mut self, key: impl Into<String>, value: impl ToString) {
         self.context.insert(key.into(), value.to_string());
     }
 
-    pub fn get_context(&self, key: &str) -> Option<&str> {
+    pub fn get_ctx(&self, key: &str) -> Option<&str> {
         self.context.get(key).map(|s| s.as_str())
     }
 
-    pub fn context(&self) -> &HashMap<String, String> {
+    pub fn ctx(&self) -> &HashMap<String, String> {
         &self.context
     }
 
@@ -85,7 +85,7 @@ impl Error {
         self.kind == kind
     }
 
-    pub fn message(&self) -> &str {
+    pub fn msg(&self) -> &str {
         &self.message
     }
 }
