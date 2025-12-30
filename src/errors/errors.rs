@@ -92,12 +92,12 @@ impl Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.kind)?;
+        write!(f, "[{}]", self.kind)?;
 
         match (&self.message.is_empty(), &self.source) {
-            (false, Some(source)) => write!(f, ": {} {}", self.message, source)?,
-            (false, None) => write!(f, ": {}", self.message)?,
-            (true, Some(source)) => write!(f, ": {}", source)?,
+            (false, Some(source)) => write!(f, " {} {}", self.message, source)?,
+            (false, None) => write!(f, " {}", self.message)?,
+            (true, Some(source)) => write!(f, " {}", source)?,
             (true, None) => {},
         }
 
@@ -108,9 +108,9 @@ impl fmt::Display for Error {
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.message.is_empty() {
-            writeln!(f, "{}", self.kind)?;
+            writeln!(f, "[{}]", self.kind)?;
         } else {
-            writeln!(f, "{}: {}", self.kind, self.message)?;
+            writeln!(f, "[{}] {}", self.kind, self.message)?;
         }
 
         if !self.context.is_empty() {
