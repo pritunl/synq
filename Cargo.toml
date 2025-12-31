@@ -8,10 +8,11 @@ arboard = "3.6.1"
 backtrace = "0.3.76"
 futures = "0.3.31"
 prost = "0.14.1"
+saphyr = "0.0.6"
 scopeguard = "1.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "0.0.11"
-tokio = { version = "1.48.0", default-features = false, features = ["rt-multi-thread", "macros", "net", "signal"] }
+tokio = { version = "1.48.0", default-features = false, features = ["rt-multi-thread", "macros", "net", "signal", "fs"] }
 tokio-stream = "0.1.17"
 tonic = "0.14.1"
 tonic-prost = "0.14.1"
