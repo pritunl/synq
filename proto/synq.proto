@@ -3,8 +3,8 @@ syntax = "proto3";
 package synq;
 
 service SynqService {
-  rpc StreamScroll(stream ScrollEvent) returns (stream ScrollEvent);
-  rpc StreamClipboard(stream ClipboardEvent) returns (stream ClipboardEvent);
+  rpc Scroll(stream ScrollEvent) returns (stream ScrollEvent);
+  rpc Clipboard(stream ClipboardEvent) returns (stream ClipboardEvent);
 }
 
 message ScrollEvent {
@@ -15,11 +15,4 @@ message ScrollEvent {
 message ClipboardEvent {
   string client = 1;
   bytes data = 2;
-}
-
-message Event {
-  oneof event {
-    ScrollEvent scroll = 1;
-    ClipboardEvent clipboard = 2;
-  }
 }
