@@ -11,6 +11,7 @@ prost = "0.14.1"
 scopeguard = "1.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.48.0", default-features = false, features = ["rt-multi-thread", "macros", "net", "signal"] }
+tokio-stream = "0.1.17"
 tonic = "0.14.1"
 tonic-prost = "0.14.1"
 tracing = "0.1.44"
