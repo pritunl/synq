@@ -1,0 +1,101 @@
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use tokio::fs;
+use serde_saphyr::{from_str, to_string};
+
+use crate::errors::{Result, Error, ErrorKind};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
+    pub server: ServerConfig,
+    pub peers: Vec<PeerConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerConfig {
+    pub bind: String,
+    pub private_key: String,
+    pub public_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerConfig {
+    pub address: String,
+    pub public_key: String,
+}
+
+impl Config {
+    pub async fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path = path.as_ref();
+
+        let contents = fs::read_to_string(path)
+            .await
+            .map_err(|e| Error::wrap(e, ErrorKind::Read)
+                .with_msg("config: Failed to read file")
+                .with_ctx("path", path.display().to_string())
+            )?;
+
+        let config: Config = from_str(&contents)
+            .map_err(|e| Error::wrap(e, ErrorKind::Parse)
+                .with_msg("config: Failed to parse YAML")
+                .with_ctx("path", path.display().to_string())
+            )?;
+
+        config.validate()?;
+
+        Ok(config)
+    }
+
+    pub async fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let path = path.as_ref();
+
+        self.validate()?;
+
+        let contents = to_string(self)
+            .map_err(|e| Error::wrap(e, ErrorKind::Write)
+                .with_msg("config: Failed to serialize to YAML")
+            )?;
+
+        fs::write(path, &contents)
+            .await
+            .map_err(|e| Error::wrap(e, ErrorKind::Write)
+                .with_msg("config: Failed to write file")
+                .with_ctx("path", path.display().to_string())
+            )?;
+
+        Ok(())
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.server.bind.is_empty() {
+            return Err(Error::new(ErrorKind::Parse)
+                .with_msg("config: Server bind address cannot be empty"));
+        }
+
+        if self.server.private_key.is_empty() {
+            return Err(Error::new(ErrorKind::Parse)
+                .with_msg("config: Private key cannot be empty"));
+        }
+
+        if self.server.public_key.is_empty() {
+            return Err(Error::new(ErrorKind::Parse)
+                .with_msg("config: Public key cannot be empty"));
+        }
+
+        for (i, peer) in self.peers.iter().enumerate() {
+            if peer.address.is_empty() {
+                return Err(Error::new(ErrorKind::Parse)
+                    .with_msg("config: Peer address cannot be empty")
+                    .with_ctx("peer_index", i));
+            }
+
+            if peer.public_key.is_empty() {
+                return Err(Error::new(ErrorKind::Parse)
+                    .with_msg("config: Peer public key cannot be empty")
+                    .with_ctx("peer_index", i));
+            }
+        }
+
+        Ok(())
+    }
+}
