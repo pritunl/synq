@@ -37,7 +37,7 @@ impl Config {
 
         let config: Config = from_str(&contents)
             .map_err(|e| Error::wrap(e, ErrorKind::Parse)
-                .with_msg("config: Failed to parse YAML")
+                .with_msg("config: Failed to parse")
                 .with_ctx("path", path.display().to_string())
             )?;
 
@@ -53,7 +53,7 @@ impl Config {
 
         let contents = to_string(self)
             .map_err(|e| Error::wrap(e, ErrorKind::Write)
-                .with_msg("config: Failed to serialize to YAML")
+                .with_msg("config: Failed to serialize")
             )?;
 
         fs::write(path, &contents)
