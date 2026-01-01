@@ -1,4 +1,4 @@
-use tracing::error;
+use tracing::{info, error};
 use tokio_stream::StreamExt;
 use tonic::{transport::Server as TonicServer, Request, Response, Status, Streaming};
 use futures::stream;
@@ -21,7 +21,7 @@ impl SynqService for Server {
         &self,
         request: Request<Streaming<ScrollEvent>>,
     ) -> Result<Response<Self::ScrollStream>, Status> {
-        println!("Scroll connection established");
+        info!("Scroll connection established");
 
         let mut in_stream = request.into_inner();
 
@@ -29,7 +29,7 @@ impl SynqService for Server {
             while let Some(result) = in_stream.next().await {
                 match result {
                     Ok(evt) => {
-                        println!("{} - {}", evt.delta_x, evt.delta_y)
+                        info!("{} - {}", evt.delta_x, evt.delta_y)
                     }
                     Err(e) => {
                         let err = Error::wrap(e, ErrorKind::Network)
@@ -39,7 +39,7 @@ impl SynqService for Server {
                     }
                 }
             }
-            println!("Scroll connection closed");
+            info!("Scroll connection closed");
         });
 
         Ok(Response::new(stream::empty()))
@@ -49,7 +49,7 @@ impl SynqService for Server {
         &self,
         request: Request<Streaming<ClipboardEvent>>,
     ) -> Result<Response<Self::ClipboardStream>, Status> {
-        println!("Clipboard connection established");
+        info!("Clipboard connection established");
 
         let mut in_stream = request.into_inner();
 
@@ -57,7 +57,7 @@ impl SynqService for Server {
             while let Some(result) = in_stream.next().await {
                 match result {
                     Ok(event) => {
-                        println!("Clipboard client={} data={}",
+                        info!("Clipboard client={} data={}",
                             event.client, event.data.len());
                     }
                     Err(e) => {
@@ -68,7 +68,7 @@ impl SynqService for Server {
                     }
                 }
             }
-            println!("Clipboard connection closed");
+            info!("Clipboard connection closed");
         });
 
         Ok(Response::new(stream::empty()))
@@ -83,7 +83,7 @@ impl Server {
             )?;
         let server = Server::default();
 
-        println!("Synq server listening on {}", addr);
+        info!("Synq server listening on {}", addr);
 
         TonicServer::builder()
             .add_service(SynqServiceServer::new(server))
