@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 arboard = "3.6.1"
 backtrace = "0.3.76"
+clap = { version = "4.5", features = ["derive"] }
 futures = "0.3.31"
 prost = "0.14.1"
 rayon = "1.11.0"
