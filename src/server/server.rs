@@ -32,9 +32,9 @@ impl SynqService for Server {
                         info!("{} - {}", evt.delta_x, evt.delta_y)
                     }
                     Err(e) => {
-                        let err = Error::wrap(e, ErrorKind::Network)
+                        let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("server: Failed to read scroll event");
-                        error!(?err);
+                        error!(?e);
                         break;
                     }
                 }
@@ -61,9 +61,9 @@ impl SynqService for Server {
                             event.client, event.data.len());
                     }
                     Err(e) => {
-                        let err = Error::wrap(e, ErrorKind::Network)
+                        let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("server: Failed to read clipboard event");
-                        error!(?err);
+                        error!(?e);
                         break;
                     }
                 }
