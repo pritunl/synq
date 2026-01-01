@@ -40,7 +40,10 @@ impl Error {
         }
     }
 
-    pub fn wrap(source: impl std::error::Error + Send + Sync + 'static, kind: ErrorKind) -> Self {
+    pub fn wrap(
+        source: impl std::error::Error + Send + Sync + 'static,
+        kind: ErrorKind,
+    ) -> Self {
         Self {
             kind,
             message: String::new(),
@@ -50,7 +53,10 @@ impl Error {
         }
     }
 
-    pub fn wrapf(source: impl std::error::Error + Send + Sync + 'static, kind: ErrorKind, args: fmt::Arguments) -> Self {
+    pub fn wrapf(
+        source: impl std::error::Error + Send + Sync + 'static,
+        kind: ErrorKind, args: fmt::Arguments,
+    ) -> Self {
         Self {
             kind,
             message: args.to_string(),
