@@ -1642,6 +1642,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "backtrace",
+ "base64",
  "clap",
  "crypto_box",
  "futures",
