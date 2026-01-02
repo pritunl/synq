@@ -1468,6 +1468,7 @@ dependencies = [
  "tonic-prost-build",
  "tracing",
  "tracing-subscriber",
+ "x11rb",
 ]
 
 [[package]]
