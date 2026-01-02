@@ -24,6 +24,7 @@ struct X11State {
     conn: RustConnection,
     window: Window,
     clip_atom: Atom,
+    last_timestamp: std::sync::Mutex<u32>,
 }
 
 impl X11State {
@@ -69,6 +70,7 @@ impl X11State {
             conn,
             window,
             clip_atom,
+            last_timestamp: std::sync::Mutex::new(0),
         })
     }
 
@@ -108,6 +110,17 @@ impl X11State {
             match event {
                 Event::XfixesSelectionNotify(notify) => {
                     if notify.selection == self.clip_atom {
+                        let mut last_ts = self.last_timestamp.lock().unwrap();
+                        if notify.timestamp == *last_ts {
+                            trace!(
+                                "Ignoring duplicate clipboard event at timestamp {}",
+                                notify.timestamp,
+                            );
+                            continue;
+                        }
+                        *last_ts = notify.timestamp;
+                        drop(last_ts);
+
                         trace!("Clipboard changed at timestamp {}", notify.timestamp);
 
                         let change = ClipboardChange {
