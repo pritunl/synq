@@ -21,3 +21,23 @@ pub async fn get_clipboard() -> Result<String> {
         .with_msg("clipboard: Task join failed")
     )?
 }
+
+pub async fn set_clipboard(text: String) -> Result<()> {
+    tokio::task::spawn_blocking(move || {
+        let mut clipboard = Clipboard::new()
+            .map_err(|e| Error::wrap(e, ErrorKind::Write)
+                .with_msg("clipboard: Failed to initialize clipboard")
+            )?;
+
+        clipboard.set_text(text)
+            .map_err(|e| Error::wrap(e, ErrorKind::Write)
+                .with_msg("clipboard: Failed to write clipboard text")
+            )?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| Error::wrap(e, ErrorKind::Write)
+        .with_msg("clipboard: Task join failed")
+    )?
+}
