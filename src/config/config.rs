@@ -4,6 +4,7 @@ use tokio::fs;
 use serde_saphyr::{from_str, to_string};
 
 use crate::errors::{Result, Error, ErrorKind};
+use crate::crypto::{generate_keypair, secret_key_to_public_key};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -63,6 +64,17 @@ impl Config {
                 .with_ctx("path", path.display().to_string())
             )?;
 
+        Ok(())
+    }
+
+    fn normalize(&mut self) -> Result<()> {
+        if self.server.private_key.is_empty() {
+            let (secret, public) = generate_keypair();
+            self.server.private_key = secret;
+            self.server.public_key = public;
+        } else if self.server.public_key.is_empty() {
+            self.server.public_key = secret_key_to_public_key(&self.server.private_key)?;
+        }
         Ok(())
     }
 
