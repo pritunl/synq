@@ -5,6 +5,7 @@ use crypto_box::{
 };
 
 use crate::errors::{Result, Error, ErrorKind};
+use super::utils::{decode_public_key, decode_secret_key};
 
 const NONCE_SIZE: usize = 24;
 
@@ -63,32 +64,4 @@ pub fn decrypt(
     String::from_utf8(plaintext_bytes)
         .map_err(|e| Error::wrap(e, ErrorKind::Parse)
         .with_msg("crypto: invalid UTF-8 in decrypted data"))
-}
-
-fn decode_secret_key(b64: &str) -> Result<SecretKey> {
-    let bytes = STANDARD_NO_PAD
-        .decode(b64)
-        .map_err(|e| Error::wrap(e, ErrorKind::Parse)
-        .with_msg("crypto: invalid base64 private key"))?;
-
-    let bytes: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| Error::new(ErrorKind::Invalid)
-        .with_msg("crypto: private key must be 32 bytes"))?;
-
-    Ok(SecretKey::from(bytes))
-}
-
-fn decode_public_key(b64: &str) -> Result<PublicKey> {
-    let bytes = STANDARD_NO_PAD
-        .decode(b64)
-        .map_err(|e| Error::wrap(e, ErrorKind::Parse)
-        .with_msg("crypto: invalid base64 public key"))?;
-
-    let bytes: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| Error::new(ErrorKind::Invalid)
-        .with_msg("crypto: public key must be 32 bytes"))?;
-
-    Ok(PublicKey::from(bytes))
 }
