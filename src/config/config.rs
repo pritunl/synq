@@ -15,7 +15,9 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub bind: String,
+    #[serde(default)]
     pub private_key: String,
+    #[serde(default)]
     pub public_key: String,
 }
 
