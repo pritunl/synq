@@ -3,6 +3,7 @@ mod errors;
 mod config;
 mod server;
 mod client;
+mod crypto;
 mod clipboard;
 mod synq {
     tonic::include_proto!("synq");
