@@ -1,5 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
 use crypto_box::{
+    aead::{Aead, AeadCore, OsRng},
     PublicKey, SecretKey,
 };
 
@@ -31,4 +32,13 @@ pub(super) fn decode_public_key(b64: &str) -> Result<PublicKey> {
         .with_msg("crypto: public key must be 32 bytes"))?;
 
     Ok(PublicKey::from(bytes))
+}
+
+pub fn generate_keypair() -> (String, String) {
+    let secret_key = SecretKey::generate(&mut OsRng);
+    let public_key = secret_key.public_key();
+    (
+        STANDARD_NO_PAD.encode(secret_key.to_bytes()),
+        STANDARD_NO_PAD.encode(public_key.to_bytes()),
+    )
 }
