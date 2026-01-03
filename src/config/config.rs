@@ -36,12 +36,13 @@ impl Config {
                 .with_ctx("path", path.display().to_string())
             )?;
 
-        let config: Config = from_str(&contents)
+        let mut config: Config = from_str(&contents)
             .map_err(|e| Error::wrap(e, ErrorKind::Parse)
                 .with_msg("config: Failed to parse")
                 .with_ctx("path", path.display().to_string())
             )?;
 
+        config.normalize()?;
         config.validate()?;
 
         Ok(config)
