@@ -12,19 +12,14 @@ mod synq {
 
 use clap::Parser;
 use crate::errors::{Result};
-use crate::server::{Server};
-use crate::client::{Client};
 use crate::config::{Config};
 
 #[derive(Parser, Debug)]
 #[command(name = "synq")]
 #[command(about = "Synq - TODO")]
 struct Args {
-    #[arg(long, conflicts_with = "server")]
-    client: bool,
-
-    #[arg(long, conflicts_with = "client")]
-    server: bool,
+    #[arg(long)]
+    daemon: bool,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -35,30 +30,14 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-    let config = Config::load("/home/cloud/.config/synq.conf").await?;
 
-    if args.client {
-        println!("Starting in client mode");
-        println!("Public Key: {}", config.server.public_key);
-
-        let peers: Vec<String> = config.peers.iter()
-            .map(|p| p.address.clone())
-            .collect();
-
-        for peer in &peers {
-            println!("Peer: {}", peer);
+    if args.daemon {
+        let config = Config::load("/home/cloud/.config/synq.conf").await?;
+        if config.is_modified() {
+            config.save("/home/cloud/.config/synq.conf").await?;
         }
 
-        Client::run(config.server.public_key.clone(), peers).await?;
-    } else if args.server {
-        println!("Starting in server mode");
-        println!("Bind: {}", config.server.bind);
-        println!("Public Key: {}", config.server.public_key);
-
-        Server::run(config.server.bind.clone()).await?;
-    } else {
-        eprintln!("Error: Must specify either --client or --server");
-        std::process::exit(1);
+        daemon::run(config).await?
     }
 
     Ok(())
