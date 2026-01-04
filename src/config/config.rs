@@ -21,12 +21,20 @@ pub struct ServerConfig {
     pub private_key: String,
     #[serde(default)]
     pub public_key: String,
+    #[serde(default)]
+    pub clipboard_source: bool,
+    #[serde(default)]
+    pub clipboard_destination: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerConfig {
     pub address: String,
     pub public_key: String,
+    #[serde(default)]
+    pub clipboard_source: bool,
+    #[serde(default)]
+    pub clipboard_destination: bool,
 }
 
 impl Config {
