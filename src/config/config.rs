@@ -25,6 +25,10 @@ pub struct ServerConfig {
     pub clipboard_source: bool,
     #[serde(default)]
     pub clipboard_destination: bool,
+    #[serde(default)]
+    pub scroll_source: bool,
+    #[serde(default)]
+    pub scroll_destination: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +39,10 @@ pub struct PeerConfig {
     pub clipboard_source: bool,
     #[serde(default)]
     pub clipboard_destination: bool,
+    #[serde(default)]
+    pub scroll_source: bool,
+    #[serde(default)]
+    pub scroll_destination: bool,
 }
 
 impl Config {
