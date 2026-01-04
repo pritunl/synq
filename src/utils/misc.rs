@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 
+static START_TIME: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 static SAFE_CHARS: LazyLock<HashSet<char>> = LazyLock::new(|| {
     HashSet::from([
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -17,4 +19,9 @@ pub fn filter_str(s: &str, n: usize) -> String {
         .take(n)
         .filter(|c| SAFE_CHARS.contains(c))
         .collect()
+}
+
+pub fn mono_time_ms() -> u64 {
+    let start = START_TIME.get_or_init(Instant::now);
+    start.elapsed().as_millis() as u64
 }
