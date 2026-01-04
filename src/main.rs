@@ -3,6 +3,7 @@ mod errors;
 mod config;
 mod server;
 mod client;
+mod daemon;
 mod crypto;
 mod clipboard;
 mod synq {
