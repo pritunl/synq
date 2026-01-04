@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
 use crypto_box::{
-    aead::{Aead, AeadCore, OsRng},
+    aead::{OsRng},
     PublicKey, SecretKey,
 };
 
