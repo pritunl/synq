@@ -392,9 +392,12 @@ pub async fn run(config: Config) -> Result<()> {
 
     info!("Shutting down daemon");
 
+    // TODO
     for handle in handles {
         handle.abort();
     }
+
+    std::process::exit(0);
 
     Ok(())
 }
