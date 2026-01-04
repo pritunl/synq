@@ -8,6 +8,8 @@ use crate::crypto::{generate_keypair, secret_key_to_public_key};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(skip)]
+    modified: bool,
     pub server: ServerConfig,
     pub peers: Vec<PeerConfig>,
 }
@@ -70,13 +72,19 @@ impl Config {
         Ok(())
     }
 
+    pub fn is_modified(&self) -> bool {
+        self.modified
+    }
+
     fn normalize(&mut self) -> Result<()> {
         if self.server.private_key.is_empty() {
             let (secret, public) = generate_keypair();
             self.server.private_key = secret;
             self.server.public_key = public;
+            self.modified = true;
         } else if self.server.public_key.is_empty() {
             self.server.public_key = secret_key_to_public_key(&self.server.private_key)?;
+            self.modified = true;
         }
         Ok(())
     }
