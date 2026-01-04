@@ -1,4 +1,4 @@
-use arboard::Clipboard;
+use arboard::{Clipboard, SetExtLinux, LinuxClipboardKind};
 
 use crate::errors::{Result, Error, ErrorKind};
 
@@ -29,7 +29,10 @@ pub async fn set_clipboard(text: String) -> Result<()> {
                 .with_msg("clipboard: Failed to initialize clipboard")
             )?;
 
-        clipboard.set_text(text)
+        clipboard.set()
+            .clipboard(LinuxClipboardKind::Clipboard)
+            .wait()
+            .text(text)
             .map_err(|e| Error::wrap(e, ErrorKind::Write)
                 .with_msg("clipboard: Failed to write clipboard text")
             )?;
