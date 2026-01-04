@@ -386,18 +386,24 @@ pub async fn run(config: Config) -> Result<()> {
         }));
     }
 
-    tokio::signal::ctrl_c().await
-        .map_err(|e| Error::wrap(e, ErrorKind::Read)
-            .with_msg("daemon: Failed to listen for shutdown signal"))?;
+    let mut sigterm = tokio::signal::unix::signal(
+        tokio::signal::unix::SignalKind::terminate(),
+    ).map_err(|e| Error::wrap(e, ErrorKind::Read)
+        .with_msg("daemon: Failed to register SIGTERM handler"))?;
 
-    info!("Shutting down daemon");
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            info!("Received SIGINT, shutting down");
+        }
+        _ = sigterm.recv() => {
+            info!("Received SIGTERM, shutting down");
+        }
+    }
 
     // TODO
     for handle in handles {
         handle.abort();
     }
 
-    std::process::exit(0);
-
-    Ok(())
+    std::process::exit(0)
 }
