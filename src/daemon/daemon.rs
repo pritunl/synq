@@ -344,6 +344,8 @@ pub async fn run(config: Config) -> Result<()> {
     let should_run_clipboard_source = config.server.clipboard_source;
     let should_run_scroll_source = config.server.scroll_source;
 
+    utils::mono_time_ms();
+
     info!(
         "Daemon starting: server={} clipboard_source={} scroll_source={}",
         should_run_server, should_run_clipboard_source, should_run_scroll_source,
