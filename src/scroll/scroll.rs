@@ -138,6 +138,64 @@ impl ScrollBlocker {
     }
 }
 
+pub struct ScrollEvent {
+    pub delta_x: i32,
+    pub delta_y: i32,
+}
+
+pub struct ScrollReceiver {
+    device: File,
+}
+
+impl ScrollReceiver {
+    pub fn new(device_path: impl AsRef<Path>) -> Result<Self> {
+        let path = device_path.as_ref();
+
+        let device = OpenOptions::new()
+            .read(true)
+            .open(path)
+            .map_err(|e| {
+                Error::wrap(e, ErrorKind::Read)
+                    .with_msg("scroll: Failed to open input device")
+                    .with_ctx("path", path.display())
+            })?;
+
+        Ok(Self { device })
+    }
+
+    pub fn read_event(&mut self) -> Result<Option<ScrollEvent>> {
+        let mut buf = [0u8; mem::size_of::<InputEvent>()];
+
+        self.device.read_exact(&mut buf).map_err(|e| {
+            Error::wrap(e, ErrorKind::Read)
+                .with_msg("scroll: Failed to read input event")
+        })?;
+
+        let event: InputEvent = unsafe {
+            mem::transmute(buf)
+        };
+
+        if event.type_ != EV_REL as u16 {
+            return Ok(None);
+        }
+
+        match event.code {
+            REL_WHEEL => Ok(Some(ScrollEvent {
+                delta_x: 0,
+                delta_y: event.value,
+            })),
+            REL_HWHEEL => Ok(Some(ScrollEvent {
+                delta_x: event.value,
+                delta_y: 0,
+            })),
+            REL_WHEEL_HI_RES | REL_HWHEEL_HI_RES => {
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
 pub struct ScrollSender {
     uinput: File,
 }
@@ -306,4 +364,3 @@ fn setup_scroll_uinput() -> Result<File> {
     std::thread::sleep(std::time::Duration::from_millis(200));
     Ok(uinput)
 }
-
