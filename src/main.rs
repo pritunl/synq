@@ -5,6 +5,7 @@ mod server;
 mod client;
 mod daemon;
 mod crypto;
+mod scroll;
 mod clipboard;
 mod synq;
 
