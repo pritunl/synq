@@ -19,6 +19,7 @@ use crate::errors::{Result, Error, ErrorKind};
 use crate::config::Config;
 use crate::crypto;
 use crate::clipboard;
+use crate::scroll;
 use crate::utils;
 use crate::synq::{
     synq_service_server::{SynqService, SynqServiceServer},
@@ -31,6 +32,7 @@ const CLIPBOARD_TTL: u64 = 500;
 pub struct DaemonServer {
     config: Config,
     last_set_clipboard: Arc<AtomicU64>,
+    last_scroll: Arc<AtomicU64>,
 }
 
 #[tonic::async_trait]
@@ -151,12 +153,16 @@ async fn handle_clipboard_event(
     Ok(())
 }
 
-async fn run_server(config: Config, last_set_clipboard: Arc<AtomicU64>) -> Result<()> {
+async fn run_server(
+    config: Config,
+    last_set_clipboard: Arc<AtomicU64>,
+    last_scroll: Arc<AtomicU64>,
+) -> Result<()> {
     let addr = config.server.bind.parse()
         .map_err(|e| Error::wrap(e, ErrorKind::Parse)
             .with_msg("daemon: Failed to parse bind address"))?;
 
-    let server = DaemonServer { config, last_set_clipboard };
+    let server = DaemonServer { config, last_set_clipboard, last_scroll };
 
     info!("Daemon server listening on {}", addr);
 
@@ -357,13 +363,15 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     let last_set_clipboard = Arc::new(AtomicU64::new(0));
+    let last_scroll = Arc::new(AtomicU64::new(0));
     let mut handles = Vec::new();
 
     if should_run_server {
         let server_config = config.clone();
         let last_set = last_set_clipboard.clone();
+        let last_scr = last_scroll.clone();
         handles.push(tokio::spawn(async move {
-            if let Err(e) = run_server(server_config, last_set).await {
+            if let Err(e) = run_server(server_config, last_set, last_scr).await {
                 error!("Server error: {:?}", e);
             }
         }));
@@ -386,6 +394,26 @@ pub async fn run(config: Config) -> Result<()> {
                 error!("Scroll source error: {:?}", e);
             }
         }));
+    }
+
+    if config.server.scroll_destination {
+        let device_path = config.server.scroll_input_device.clone();
+        let last_scr = last_scroll.clone();
+        std::thread::spawn(move || {
+            let mut blocker: scroll::ScrollBlocker = match scroll::ScrollBlocker::new(
+                &device_path, last_scr,
+            ) {
+                Ok(b) => b,
+                Err(e) => {
+                    error!(?e, "Failed to start scroll blocker");
+                    return;
+                }
+            };
+            info!("Started scroll blocker on {}", device_path);
+            if let Err(e) = blocker.run_blocking() {
+                error!(?e, "Scroll blocker error");
+            }
+        });
     }
 
     let mut sigterm = tokio::signal::unix::signal(
