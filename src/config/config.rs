@@ -29,6 +29,8 @@ pub struct ServerConfig {
     pub scroll_source: bool,
     #[serde(default)]
     pub scroll_destination: bool,
+    #[serde(default)]
+    pub scroll_input_device: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
