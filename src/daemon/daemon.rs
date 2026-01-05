@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration};
 use tracing::{error, info, warn, trace};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -33,6 +32,7 @@ pub struct DaemonServer {
     config: Config,
     last_set_clipboard: Arc<AtomicU64>,
     last_scroll: Arc<AtomicU64>,
+    scroll_tx: Option<std::sync::mpsc::Sender<ScrollEvent>>,
 }
 
 #[tonic::async_trait]
@@ -48,6 +48,11 @@ impl SynqService for DaemonServer {
             return Err(Status::permission_denied("scroll destination not enabled"));
         }
 
+        let scroll_tx = match &self.scroll_tx {
+            Some(tx) => tx.clone(),
+            None => return Err(Status::unavailable("scroll sender not initialized")),
+        };
+
         trace!("Scroll connection established");
 
         let mut in_stream = request.into_inner();
@@ -60,6 +65,10 @@ impl SynqService for DaemonServer {
                             "Scroll event: delta_x={} delta_y={}",
                             evt.delta_x, evt.delta_y,
                         );
+                        if scroll_tx.send(evt).is_err() {
+                            error!("Scroll sender channel closed");
+                            break;
+                        }
                     }
                     Err(e) => {
                         let e = Error::wrap(e, ErrorKind::Network)
@@ -114,6 +123,13 @@ impl SynqService for DaemonServer {
     }
 }
 
+fn handle_scroll_event(
+    scroll_sender: &mut scroll::ScrollSender,
+    event: ScrollEvent,
+) -> Result<()> {
+    scroll_sender.send(event.delta_x, event.delta_y)
+}
+
 async fn handle_clipboard_event(
     config: &Config,
     last_set_clipboard: &AtomicU64,
@@ -153,6 +169,23 @@ async fn handle_clipboard_event(
     Ok(())
 }
 
+fn run_scroll_sender(rx: std::sync::mpsc::Receiver<ScrollEvent>) {
+    let mut sender = match scroll::ScrollSender::new() {
+        Ok(s) => s,
+        Err(e) => {
+            error!(?e, "Failed to create scroll sender");
+            return;
+        }
+    };
+    info!("Started scroll sender");
+
+    while let Ok(event) = rx.recv() {
+        if let Err(e) = handle_scroll_event(&mut sender, event) {
+            error!(?e, "Failed to send scroll event");
+        }
+    }
+}
+
 async fn run_server(
     config: Config,
     last_set_clipboard: Arc<AtomicU64>,
@@ -162,7 +195,15 @@ async fn run_server(
         .map_err(|e| Error::wrap(e, ErrorKind::Parse)
             .with_msg("daemon: Failed to parse bind address"))?;
 
-    let server = DaemonServer { config, last_set_clipboard, last_scroll };
+    let scroll_tx = if config.server.scroll_destination {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || run_scroll_sender(rx));
+        Some(tx)
+    } else {
+        None
+    };
+
+    let server = DaemonServer { config, last_set_clipboard, last_scroll, scroll_tx };
 
     info!("Daemon server listening on {}", addr);
 
@@ -322,27 +363,71 @@ async fn run_clipboard_source(config: Config, last_set: Arc<AtomicU64>) -> Resul
     Ok(())
 }
 
+fn run_scroll_receiver(
+    device_path: String,
+    tx: std::sync::mpsc::Sender<scroll::ScrollEvent>,
+) -> Result<()> {
+    let mut receiver = scroll::ScrollReceiver::new(&device_path)?;
+    info!("Started scroll receiver on {}", device_path);
+
+    loop {
+        match receiver.read_event() {
+            Ok(Some(event)) => {
+                trace!(delta_x = event.delta_x, delta_y = event.delta_y, "Scroll event");
+                if tx.send(event).is_err() {
+                    break;
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                error!(?e, "Scroll receiver error");
+                return Err(e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn run_scroll_source(config: Config) -> Result<()> {
     info!("Starting scroll source");
 
-    let mut interval = tokio::time::interval(Duration::from_secs(10));
+    let device_path = config.server.scroll_input_device.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let rx = Arc::new(std::sync::Mutex::new(rx));
+
+    std::thread::spawn(move || {
+        if let Err(e) = run_scroll_receiver(device_path, tx) {
+            error!(?e, "Scroll receiver thread failed");
+        }
+    });
 
     loop {
-        interval.tick().await;
+        let event = match tokio::task::spawn_blocking({
+            let rx = rx.clone();
+            move || rx.lock().unwrap().recv()
+        }).await {
+            Ok(Ok(event)) => event,
+            Ok(Err(_)) => break,
+            Err(e) => {
+                let e = Error::wrap(e, ErrorKind::Exec)
+                    .with_msg("daemon: Scroll receiver task failed");
+                return Err(e);
+            }
+        };
 
-        let delta_x = 5;
-        let delta_y = 5;
-
-        trace!("Sending scroll event: delta_x={} delta_y={}", delta_x, delta_y);
+        trace!("Sending scroll event: delta_x={} delta_y={}", event.delta_x, event.delta_y);
 
         for peer in &config.peers {
             if peer.scroll_destination {
-                if let Err(e) = send_scroll_to_peer(&peer.address, delta_x, delta_y).await {
+                if let Err(e) = send_scroll_to_peer(&peer.address, event.delta_x, event.delta_y).await {
                     error!("Failed to send scroll to {}: {:?}", peer.address, e);
                 }
             }
         }
     }
+
+    Ok(())
 }
 
 pub async fn run(config: Config) -> Result<()> {
