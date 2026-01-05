@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use tracing::info;
+use tracing::trace;
 
 use crate::errors::{Error, ErrorKind, Result};
 use crate::utils;
@@ -117,7 +117,7 @@ impl ScrollBlocker {
 
         if is_scroll {
             self.last_scroll.store(utils::mono_time_ms(), Ordering::SeqCst);
-            info!(code = event.code, value = event.value, "Blocked scroll event");
+            trace!(code = event.code, value = event.value, "Blocked scroll event");
         } else {
             let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe {
                 mem::transmute(event)
