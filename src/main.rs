@@ -6,9 +6,7 @@ mod client;
 mod daemon;
 mod crypto;
 mod clipboard;
-mod synq {
-    tonic::include_proto!("synq");
-}
+mod synq;
 
 use clap::Parser;
 use crate::errors::{Result};
