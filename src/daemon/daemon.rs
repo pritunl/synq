@@ -173,7 +173,9 @@ fn run_scroll_sender(rx: std::sync::mpsc::Receiver<ScrollEvent>) {
     let mut sender = match scroll::ScrollSender::new() {
         Ok(s) => s,
         Err(e) => {
-            error!(?e, "Failed to create scroll sender");
+            let e = Error::wrap(e, ErrorKind::Exec)
+                .with_msg("daemon: Failed to create scroll sender");
+            error!(?e);
             return;
         }
     };
@@ -181,7 +183,9 @@ fn run_scroll_sender(rx: std::sync::mpsc::Receiver<ScrollEvent>) {
 
     while let Ok(event) = rx.recv() {
         if let Err(e) = handle_scroll_event(&mut sender, event) {
-            error!(?e, "Failed to send scroll event");
+            let e = Error::wrap(e, ErrorKind::Exec)
+                .with_msg("daemon: Failed to send scroll event");
+            error!(?e);
         }
     }
 }
@@ -354,7 +358,9 @@ async fn run_clipboard_source(config: Config, last_set: Arc<AtomicU64>) -> Resul
         let clipboard_text = match clipboard::get_clipboard().await {
             Ok(text) => text,
             Err(e) => {
-                warn!("Failed to get clipboard: {:?}", e);
+                let e = Error::wrap(e, ErrorKind::Read)
+                    .with_msg("daemon: Failed to get clipboard");
+                warn!(?e);
                 continue;
             }
         };
@@ -369,7 +375,10 @@ async fn run_clipboard_source(config: Config, last_set: Arc<AtomicU64>) -> Resul
                     &peer.public_key,
                     &clipboard_text,
                 ).await {
-                    error!("Failed to send clipboard to {}: {:?}", peer.address, e);
+                    let e = Error::wrap(e, ErrorKind::Network)
+                        .with_msg("daemon: Failed to send clipboard to peer")
+                        .with_ctx("address", &peer.address);
+                    error!(?e);
                 }
             }
         }
@@ -395,7 +404,9 @@ fn run_scroll_receiver(
             }
             Ok(None) => {}
             Err(e) => {
-                error!(?e, "Scroll receiver error");
+                let e = Error::wrap(e, ErrorKind::Read)
+                    .with_msg("daemon: Scroll receiver error");
+                error!(?e);
                 return Err(e);
             }
         }
@@ -413,7 +424,9 @@ async fn run_scroll_source(config: Config) -> Result<()> {
 
     std::thread::spawn(move || {
         if let Err(e) = run_scroll_receiver(device_path, tx) {
-            error!(?e, "Scroll receiver thread failed");
+            let e = Error::wrap(e, ErrorKind::Exec)
+                .with_msg("daemon: Scroll receiver thread failed");
+            error!(?e);
         }
     });
 
@@ -452,7 +465,10 @@ async fn run_scroll_source(config: Config) -> Result<()> {
                     delta_x,
                     delta_y,
                 ).await {
-                    error!("Failed to send scroll to {}: {:?}", peer.address, e);
+                    let e = Error::wrap(e, ErrorKind::Network)
+                        .with_msg("daemon: Failed to send scroll to peer")
+                        .with_ctx("address", &peer.address);
+                    error!(?e);
                 }
             }
         }
@@ -488,7 +504,9 @@ pub async fn run(config: Config) -> Result<()> {
         let last_scr = last_scroll.clone();
         handles.push(tokio::spawn(async move {
             if let Err(e) = run_server(server_config, last_set, last_scr).await {
-                error!("Server error: {:?}", e);
+                let e = Error::wrap(e, ErrorKind::Network)
+                    .with_msg("daemon: Server error");
+                error!(?e);
             }
         }));
     }
@@ -498,7 +516,9 @@ pub async fn run(config: Config) -> Result<()> {
         let last_set = last_set_clipboard.clone();
         handles.push(tokio::spawn(async move {
             if let Err(e) = run_clipboard_source(clipboard_config, last_set).await {
-                error!("Clipboard source error: {:?}", e);
+                let e = Error::wrap(e, ErrorKind::Exec)
+                    .with_msg("daemon: Clipboard source error");
+                error!(?e);
             }
         }));
     }
@@ -507,7 +527,9 @@ pub async fn run(config: Config) -> Result<()> {
         let scroll_config = config.clone();
         handles.push(tokio::spawn(async move {
             if let Err(e) = run_scroll_source(scroll_config).await {
-                error!("Scroll source error: {:?}", e);
+                let e = Error::wrap(e, ErrorKind::Exec)
+                    .with_msg("daemon: Scroll source error");
+                error!(?e);
             }
         }));
     }
@@ -521,13 +543,17 @@ pub async fn run(config: Config) -> Result<()> {
             ) {
                 Ok(b) => b,
                 Err(e) => {
-                    error!(?e, "Failed to start scroll blocker");
+                    let e = Error::wrap(e, ErrorKind::Exec)
+                        .with_msg("daemon: Failed to start scroll blocker");
+                    error!(?e);
                     return;
                 }
             };
             info!("Started scroll blocker on {}", device_path);
             if let Err(e) = blocker.run_blocking() {
-                error!(?e, "Scroll blocker error");
+                let e = Error::wrap(e, ErrorKind::Exec)
+                    .with_msg("daemon: Scroll blocker error");
+                error!(?e);
             }
         });
     }
