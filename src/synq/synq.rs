@@ -3,8 +3,10 @@
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ScrollEvent {
     #[prost(int32, tag="1")]
-    pub delta_x: i32,
+    pub source: i32,
     #[prost(int32, tag="2")]
+    pub delta_x: i32,
+    #[prost(int32, tag="3")]
     pub delta_y: i32,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
