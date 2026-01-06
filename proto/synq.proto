@@ -7,10 +7,16 @@ service SynqService {
   rpc Clipboard(stream ClipboardEvent) returns (stream ClipboardEvent);
 }
 
+enum ScrollSource {
+  SCROLL_SOURCE_WHEEL = 0;
+  SCROLL_SOURCE_FINGER = 1;
+  SCROLL_SOURCE_CONTINUOUS = 2;
+}
+
 message ScrollEvent {
-  int32 source = 1;
-  int32 delta_x = 2;
-  int32 delta_y = 3;
+  ScrollSource source = 1;
+  double delta_x = 2;
+  double delta_y = 3;
 }
 
 message ClipboardEvent {
