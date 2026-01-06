@@ -29,6 +29,8 @@ pub struct ServerConfig {
     pub scroll_source: bool,
     #[serde(default)]
     pub scroll_destination: bool,
+    #[serde(default = "default_scroll_reverse")]
+    pub scroll_reverse: bool,
     #[serde(default)]
     pub scroll_input_device: String,
 }
@@ -45,6 +47,10 @@ pub struct PeerConfig {
     pub scroll_source: bool,
     #[serde(default)]
     pub scroll_destination: bool,
+}
+
+const fn default_scroll_reverse() -> bool {
+    true
 }
 
 impl Config {
