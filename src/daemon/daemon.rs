@@ -23,7 +23,7 @@ use crate::utils;
 use crate::synq::{
     synq_service_server::{SynqService, SynqServiceServer},
     synq_service_client::SynqServiceClient,
-    ScrollEvent, ClipboardEvent,
+    ScrollEvent, ClipboardEvent, ScrollSource,
 };
 
 const CLIPBOARD_TTL: u64 = 500;
@@ -288,8 +288,23 @@ async fn send_clipboard_to_peer(
     Ok(())
 }
 
-async fn send_scroll_to_peer(peer_address: &str, delta_x: i32, delta_y: i32) -> Result<()> {
-    let event = ScrollEvent { delta_x, delta_y };
+async fn send_scroll_to_peer(
+    peer_address: &str,
+    source: scroll::ScrollSource,
+    delta_x: f64,
+    delta_y: f64,
+) -> Result<()> {
+    let proto_source = match source {
+        scroll::ScrollSource::Wheel => ScrollSource::Wheel,
+        scroll::ScrollSource::Finger => ScrollSource::Finger,
+        scroll::ScrollSource::Continuous => ScrollSource::Continuous,
+    };
+
+    let event = ScrollEvent {
+        source: proto_source.into(),
+        delta_x,
+        delta_y,
+    };
 
     let mut client = connect_to_peer(peer_address).await?;
 
@@ -416,11 +431,21 @@ async fn run_scroll_source(config: Config) -> Result<()> {
             }
         };
 
-        trace!("Sending scroll event: delta_x={} delta_y={}", event.delta_x, event.delta_y);
+        trace!(
+            source = ?event.source,
+            delta_x = delta_x,
+            delta_y = delta_y,
+            "Sending scroll event"
+        );
 
         for peer in &config.peers {
             if peer.scroll_destination {
-                if let Err(e) = send_scroll_to_peer(&peer.address, event.delta_x, event.delta_y).await {
+                if let Err(e) = send_scroll_to_peer(
+                    &peer.address,
+                    event.source,
+                    delta_x,
+                    delta_y,
+                ).await {
                     error!("Failed to send scroll to {}: {:?}", peer.address, e);
                 }
             }
