@@ -431,6 +431,12 @@ async fn run_scroll_source(config: Config) -> Result<()> {
             }
         };
 
+        let (delta_x, delta_y) = if config.server.scroll_reverse {
+            (-event.delta_x, -event.delta_y)
+        } else {
+            (event.delta_x, event.delta_y)
+        };
+
         trace!(
             source = ?event.source,
             delta_x = delta_x,
