@@ -8,8 +8,9 @@ service SynqService {
 }
 
 message ScrollEvent {
-  int32 delta_x = 1;
-  int32 delta_y = 2;
+  int32 source = 1;
+  int32 delta_x = 2;
+  int32 delta_y = 3;
 }
 
 message ClipboardEvent {
