@@ -1,12 +1,16 @@
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::mem;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::io::{AsRawFd, OwnedFd};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use tracing::trace;
+use input::event::pointer::{Axis, PointerEvent, PointerScrollEvent};
+use input::{Event, Libinput, LibinputInterface};
+use libc::{O_RDONLY, O_RDWR, O_WRONLY};
+use tracing::{info, trace};
 
 use crate::errors::{Error, ErrorKind, Result};
 use crate::utils;
@@ -31,6 +35,13 @@ const REL_WHEEL_HI_RES: u16 = 0x0b;
 const REL_HWHEEL_HI_RES: u16 = 0x0c;
 
 const SYN_REPORT: u16 = 0x00;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollSource {
+    Wheel,
+    Finger,
+    Continuous,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
@@ -66,6 +77,24 @@ struct UinputSetup {
     ff_effects_max: u32,
 }
 
+struct Interface;
+
+impl LibinputInterface for Interface {
+    fn open_restricted(&mut self, path: &Path, flags: i32) -> std::result::Result<OwnedFd, i32> {
+        OpenOptions::new()
+            .custom_flags(flags)
+            .read((flags & O_RDONLY != 0) | (flags & O_RDWR != 0))
+            .write((flags & O_WRONLY != 0) | (flags & O_RDWR != 0))
+            .open(path)
+            .map(|file| file.into())
+            .map_err(|err| err.raw_os_error().unwrap_or(-1))
+    }
+
+    fn close_restricted(&mut self, fd: OwnedFd) {
+        drop(File::from(fd));
+    }
+}
+
 pub struct ScrollBlocker {
     device: File,
     uinput: File,
@@ -98,6 +127,8 @@ impl ScrollBlocker {
     }
 
     pub fn process_events(&mut self) -> Result<()> {
+        use std::io::Read;
+
         let mut buf = [0u8; mem::size_of::<InputEvent>()];
 
         self.device.read_exact(&mut buf).map_err(|e| {
@@ -105,9 +136,7 @@ impl ScrollBlocker {
                 .with_msg("scroll: Failed to read input event")
         })?;
 
-        let event: InputEvent = unsafe {
-            mem::transmute(buf)
-        };
+        let event: InputEvent = unsafe { mem::transmute(buf) };
 
         let is_scroll = event.type_ == EV_REL as u16
             && (event.code == REL_WHEEL
@@ -119,9 +148,7 @@ impl ScrollBlocker {
             self.last_scroll.store(utils::mono_time_ms(), Ordering::SeqCst);
             trace!(code = event.code, value = event.value, "Blocked scroll event");
         } else {
-            let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe {
-                mem::transmute(event)
-            };
+            let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe { mem::transmute(event) };
             (&self.uinput).write_all(&bytes).map_err(|e| {
                 Error::wrap(e, ErrorKind::Write)
                     .with_msg("scroll: Failed to write event to uinput")
@@ -139,60 +166,133 @@ impl ScrollBlocker {
 }
 
 pub struct ScrollEvent {
-    pub delta_x: i32,
-    pub delta_y: i32,
+    pub source: ScrollSource,
+    pub delta_x: f64,
+    pub delta_y: f64,
 }
 
 pub struct ScrollReceiver {
-    device: File,
+    libinput: Libinput,
 }
 
 impl ScrollReceiver {
     pub fn new(device_path: impl AsRef<Path>) -> Result<Self> {
         let path = device_path.as_ref();
 
-        let device = OpenOptions::new()
-            .read(true)
-            .open(path)
-            .map_err(|e| {
-                Error::wrap(e, ErrorKind::Read)
-                    .with_msg("scroll: Failed to open input device")
-                    .with_ctx("path", path.display())
-            })?;
+        let mut libinput = Libinput::new_from_path(Interface);
+        libinput.path_add_device(path.to_str().ok_or_else(|| {
+            Error::new(ErrorKind::Parse).with_msg("scroll: Invalid device path")
+        })?).ok_or_else(|| {
+            Error::new(ErrorKind::Read)
+                .with_msg("scroll: Failed to add device to libinput")
+                .with_ctx("path", path.display())
+        })?;
 
-        Ok(Self { device })
+        Ok(Self { libinput })
     }
 
     pub fn read_event(&mut self) -> Result<Option<ScrollEvent>> {
-        let mut buf = [0u8; mem::size_of::<InputEvent>()];
-
-        self.device.read_exact(&mut buf).map_err(|e| {
-            Error::wrap(e, ErrorKind::Read)
-                .with_msg("scroll: Failed to read input event")
-        })?;
-
-        let event: InputEvent = unsafe {
-            mem::transmute(buf)
+        let mut pfd = libc::pollfd {
+            fd: self.libinput.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
         };
 
-        if event.type_ != EV_REL as u16 {
-            return Ok(None);
+        let ret = unsafe { libc::poll(&mut pfd, 1, -1) };
+        if ret < 0 {
+            return Err(Error::wrap(std::io::Error::last_os_error(), ErrorKind::Read)
+                .with_msg("scroll: Poll failed"));
         }
 
-        match event.code {
-            REL_WHEEL => Ok(Some(ScrollEvent {
-                delta_x: 0,
-                delta_y: event.value,
-            })),
-            REL_HWHEEL => Ok(Some(ScrollEvent {
-                delta_x: event.value,
-                delta_y: 0,
-            })),
-            REL_WHEEL_HI_RES | REL_HWHEEL_HI_RES => {
-                Ok(None)
+        self.libinput.dispatch().map_err(|e| {
+            Error::wrap(e, ErrorKind::Read)
+                .with_msg("scroll: Failed to dispatch libinput events")
+        })?;
+
+        for event in &mut self.libinput {
+            if let Event::Pointer(pointer_event) = event {
+                match pointer_event {
+                    PointerEvent::ScrollWheel(wheel_event) => {
+                        let delta_x = if wheel_event.has_axis(Axis::Horizontal) {
+                            wheel_event.scroll_value(Axis::Horizontal)
+                        } else {
+                            0.0
+                        };
+                        let delta_y = if wheel_event.has_axis(Axis::Vertical) {
+                            wheel_event.scroll_value(Axis::Vertical)
+                        } else {
+                            0.0
+                        };
+
+                        info!(
+                            source = "ScrollWheel",
+                            delta_x = delta_x,
+                            delta_y = delta_y,
+                            "Scroll event"
+                        );
+
+                        return Ok(Some(ScrollEvent {
+                            source: ScrollSource::Wheel,
+                            delta_x,
+                            delta_y,
+                        }));
+                    }
+                    PointerEvent::ScrollFinger(finger_event) => {
+                        let delta_x = if finger_event.has_axis(Axis::Horizontal) {
+                            finger_event.scroll_value(Axis::Horizontal)
+                        } else {
+                            0.0
+                        };
+                        let delta_y = if finger_event.has_axis(Axis::Vertical) {
+                            finger_event.scroll_value(Axis::Vertical)
+                        } else {
+                            0.0
+                        };
+
+                        info!(
+                            source = "ScrollFinger",
+                            delta_x = delta_x,
+                            delta_y = delta_y,
+                            "Scroll event"
+                        );
+
+                        return Ok(Some(ScrollEvent {
+                            source: ScrollSource::Finger,
+                            delta_x,
+                            delta_y,
+                        }));
+                    }
+                    PointerEvent::ScrollContinuous(continuous_event) => {
+                        let delta_x = if continuous_event.has_axis(Axis::Horizontal) {
+                            continuous_event.scroll_value(Axis::Horizontal)
+                        } else {
+                            0.0
+                        };
+                        let delta_y = if continuous_event.has_axis(Axis::Vertical) {
+                            continuous_event.scroll_value(Axis::Vertical)
+                        } else {
+                            0.0
+                        };
+
+                        info!(
+                            source = "ScrollContinuous",
+                            delta_x = delta_x,
+                            delta_y = delta_y,
+                            "Scroll event"
+                        );
+
+                        return Ok(Some(ScrollEvent {
+                            source: ScrollSource::Continuous,
+                            delta_x,
+                            delta_y,
+                        }));
+                    }
+                    _ => {}
+                }
             }
-            _ => Ok(None),
         }
+
+        Ok(None)
     }
 }
 
@@ -206,31 +306,74 @@ impl ScrollSender {
         Ok(Self { uinput })
     }
 
-    pub fn send(&mut self, delta_x: i32, delta_y: i32) -> Result<()> {
+    pub fn send(&mut self, delta_x: f64, delta_y: f64) -> Result<()> {
         let now = unsafe {
             let mut tv: libc::timeval = mem::zeroed();
             libc::gettimeofday(&mut tv, std::ptr::null_mut());
             tv
         };
 
-        if delta_y != 0 {
+        // Convert libinput scroll values to v120 units
+        // libinput uses 15 degrees per scroll click by default
+        // v120 uses 120 units per scroll click
+        // So multiply by 120/15 = 8
+        const SCALE: f64 = 8.0;
+
+        let hi_res_y = (delta_y * SCALE) as i32;
+        let hi_res_x = (delta_x * SCALE) as i32;
+
+        info!(
+            delta_x = delta_x,
+            delta_y = delta_y,
+            hi_res_x = hi_res_x,
+            hi_res_y = hi_res_y,
+            "Sending scroll event"
+        );
+
+        if hi_res_y != 0 {
+            let event = InputEvent {
+                tv_sec: now.tv_sec,
+                tv_usec: now.tv_usec,
+                type_: EV_REL as u16,
+                code: REL_WHEEL_HI_RES,
+                value: hi_res_y,
+            };
+            self.write_event(&event)?;
+        }
+
+        if hi_res_x != 0 {
+            let event = InputEvent {
+                tv_sec: now.tv_sec,
+                tv_usec: now.tv_usec,
+                type_: EV_REL as u16,
+                code: REL_HWHEEL_HI_RES,
+                value: hi_res_x,
+            };
+            self.write_event(&event)?;
+        }
+
+        // Calculate discrete scroll clicks (120 units = 1 click)
+        let discrete_y = hi_res_y / 120;
+        let discrete_x = hi_res_x / 120;
+
+        if discrete_y != 0 {
             let event = InputEvent {
                 tv_sec: now.tv_sec,
                 tv_usec: now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_WHEEL,
-                value: delta_y,
+                value: discrete_y,
             };
             self.write_event(&event)?;
         }
 
-        if delta_x != 0 {
+        if discrete_x != 0 {
             let event = InputEvent {
                 tv_sec: now.tv_sec,
                 tv_usec: now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_HWHEEL,
-                value: delta_x,
+                value: discrete_x,
             };
             self.write_event(&event)?;
         }
@@ -248,9 +391,7 @@ impl ScrollSender {
     }
 
     fn write_event(&mut self, event: &InputEvent) -> Result<()> {
-        let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe {
-            mem::transmute(*event)
-        };
+        let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe { mem::transmute(*event) };
         (&self.uinput).write_all(&bytes).map_err(|e| {
             Error::wrap(e, ErrorKind::Write)
                 .with_msg("scroll: Failed to write scroll event")
@@ -263,8 +404,10 @@ fn setup_uinput() -> Result<File> {
         .read(true)
         .write(true)
         .open("/dev/uinput")
-        .map_err(|e| Error::wrap(e, ErrorKind::Read)
-            .with_msg("scroll: Failed to open uinput device"))?;
+        .map_err(|e| {
+            Error::wrap(e, ErrorKind::Read)
+                .with_msg("scroll: Failed to open uinput device")
+        })?;
 
     let fd = uinput.as_raw_fd();
 
@@ -338,8 +481,10 @@ fn setup_scroll_uinput() -> Result<File> {
         .read(true)
         .write(true)
         .open("/dev/uinput")
-        .map_err(|e| Error::wrap(e, ErrorKind::Read)
-            .with_msg("scroll: Failed to open uinput device"))?;
+        .map_err(|e| {
+            Error::wrap(e, ErrorKind::Read)
+                .with_msg("scroll: Failed to open uinput device")
+        })?;
 
     let fd = uinput.as_raw_fd();
 
@@ -351,6 +496,8 @@ fn setup_scroll_uinput() -> Result<File> {
 
         libc::ioctl(fd, UI_SET_RELBIT, REL_WHEEL as libc::c_int);
         libc::ioctl(fd, UI_SET_RELBIT, REL_HWHEEL as libc::c_int);
+        libc::ioctl(fd, UI_SET_RELBIT, REL_WHEEL_HI_RES as libc::c_int);
+        libc::ioctl(fd, UI_SET_RELBIT, REL_HWHEEL_HI_RES as libc::c_int);
 
         let mut setup: UinputSetup = mem::zeroed();
         setup.id = [0x06, 0x628, 0x1, 0x1];
