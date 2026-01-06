@@ -10,6 +10,7 @@ base64 = "0.22.1"
 clap = { version = "4.5", features = ["derive"] }
 crypto_box = "0.9.1"
 futures = "0.3.31"
+input = "0.9.1"
 libc = "0.2.178"
 prost = "0.14.1"
 rayon = "1.11.0"
