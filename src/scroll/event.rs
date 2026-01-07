@@ -1,6 +1,6 @@
 use super::constants::{ScrollSource};
 
-pub(crate) struct ScrollEvent {
+pub struct ScrollEvent {
     pub source: ScrollSource,
     pub delta_x: f64,
     pub delta_y: f64,
