@@ -18,6 +18,10 @@ use super::constants::{
     REL_HWHEEL,
     REL_WHEEL_HI_RES,
     REL_HWHEEL_HI_RES,
+    VIRTIO_TABLET_NAME,
+    VIRTIO_TABLET_ID,
+    SCROLL_DEVICE_NAME,
+    SCROLL_DEVICE_ID,
 };
 
 #[repr(C)]
@@ -109,9 +113,8 @@ pub(crate) fn setup_uinput_virtio() -> Result<File> {
         libc::ioctl(fd, UI_ABS_SETUP, &abs_y);
 
         let mut setup: UinputSetup = mem::zeroed();
-        setup.id = [0x06, 0x627, 0x3, 0x2];
-        let name = b"Virtual Virtio Tablet";
-        setup.name[..name.len()].copy_from_slice(name);
+        setup.id = VIRTIO_TABLET_ID;
+        setup.name[..VIRTIO_TABLET_NAME.len()].copy_from_slice(VIRTIO_TABLET_NAME);
 
         libc::ioctl(fd, UI_DEV_SETUP, &setup);
         libc::ioctl(fd, UI_DEV_CREATE, 0);
@@ -145,9 +148,8 @@ pub(crate) fn setup_uinput_scroll() -> Result<File> {
         libc::ioctl(fd, UI_SET_RELBIT, REL_HWHEEL_HI_RES as libc::c_int);
 
         let mut setup: UinputSetup = mem::zeroed();
-        setup.id = [0x06, 0x628, 0x1, 0x1];
-        let name = b"Virtual Scroll Device";
-        setup.name[..name.len()].copy_from_slice(name);
+        setup.id = SCROLL_DEVICE_ID;
+        setup.name[..SCROLL_DEVICE_NAME.len()].copy_from_slice(SCROLL_DEVICE_NAME);
 
         libc::ioctl(fd, UI_DEV_SETUP, &setup);
         libc::ioctl(fd, UI_DEV_CREATE, 0);

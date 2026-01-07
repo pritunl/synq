@@ -19,6 +19,12 @@ pub(crate) const REL_HWHEEL_HI_RES: u16 = 0x0c;
 
 pub(crate) const SYN_REPORT: u16 = 0x00;
 
+pub(crate) const VIRTIO_TABLET_NAME: &[u8] = b"Virtual Virtio Tablet";
+pub(crate) const SCROLL_DEVICE_NAME: &[u8] = b"Virtual Scroll Device";
+
+pub(crate) const VIRTIO_TABLET_ID: [u16; 4] = [0x06, 0x627, 0x3, 0x2];
+pub(crate) const SCROLL_DEVICE_ID: [u16; 4] = [0x06, 0x628, 0x1, 0x1];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollSource {
     Wheel,
