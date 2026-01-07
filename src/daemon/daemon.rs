@@ -201,7 +201,7 @@ async fn run_server(
 
     let scroll_tx = if config.server.scroll_destination {
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || run_scroll_sender(rx));
+        tokio::task::spawn_blocking(move || run_scroll_sender(rx));
         Some(tx)
     } else {
         None
@@ -422,7 +422,7 @@ async fn run_scroll_source(config: Config) -> Result<()> {
     let (tx, rx) = std::sync::mpsc::channel();
     let rx = Arc::new(std::sync::Mutex::new(rx));
 
-    std::thread::spawn(move || {
+    tokio::task::spawn_blocking(move || {
         if let Err(e) = run_scroll_receiver(device_path, tx) {
             let e = Error::wrap(e, ErrorKind::Exec)
                 .with_msg("daemon: Scroll receiver thread failed");
@@ -537,7 +537,7 @@ pub async fn run(config: Config) -> Result<()> {
     if config.server.scroll_destination {
         let device_path = config.server.scroll_input_device.clone();
         let last_scr = last_scroll.clone();
-        std::thread::spawn(move || {
+        tokio::task::spawn_blocking(move || {
             let mut blocker: scroll::ScrollBlocker = match scroll::ScrollBlocker::new(
                 &device_path, last_scr,
             ) {
@@ -550,7 +550,7 @@ pub async fn run(config: Config) -> Result<()> {
                 }
             };
             info!("Started scroll blocker on {}", device_path);
-            if let Err(e) = blocker.run_blocking() {
+            if let Err(e) = blocker.run() {
                 let e = Error::wrap(e, ErrorKind::Exec)
                     .with_msg("daemon: Scroll blocker error");
                 error!(?e);
