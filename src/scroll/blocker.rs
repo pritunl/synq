@@ -6,7 +6,9 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use tokio_util::sync::CancellationToken;
 use tracing::trace;
+use tracing::info;
 
 use crate::errors::{Error, ErrorKind, Result};
 use crate::utils;
@@ -91,9 +93,25 @@ impl ScrollBlocker {
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<()> {
-        loop {
+    pub fn run(&mut self, cancel: CancellationToken) -> Result<()> {
+        while !cancel.is_cancelled() {
             self.process_events()?;
         }
+        Ok(())
+    }
+
+    pub fn device_fd(&self) -> i32 {
+        self.device.as_raw_fd()
+    }
+
+    pub fn release(fd: i32) {
+        unsafe { libc::ioctl(fd, EVIOCGRAB, 0) };
+    }
+}
+
+impl Drop for ScrollBlocker {
+    fn drop(&mut self) {
+        let fd = self.device.as_raw_fd();
+        unsafe { libc::ioctl(fd, EVIOCGRAB, 0) };
     }
 }
