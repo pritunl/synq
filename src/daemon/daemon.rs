@@ -1,9 +1,12 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
+use std::sync::mpsc::{Sender, Receiver};
+use std::sync::Mutex;
 use tracing::{error, info, warn, trace};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use tokio_util::sync::CancellationToken;
 use tonic::{
     transport::Server as TonicServer,
     transport::Channel,
@@ -19,11 +22,12 @@ use crate::config::Config;
 use crate::crypto;
 use crate::clipboard;
 use crate::scroll;
+use crate::scroll::{ScrollSender, ScrollReceiver, ScrollBlocker, ScrollSource};
 use crate::utils;
 use crate::synq::{
     synq_service_server::{SynqService, SynqServiceServer},
     synq_service_client::SynqServiceClient,
-    ScrollEvent, ClipboardEvent, ScrollSource,
+    ScrollEvent, ClipboardEvent, ScrollSource as ProtoScrollSource,
 };
 
 const CLIPBOARD_TTL: u64 = 500;
@@ -32,7 +36,7 @@ pub struct DaemonServer {
     config: Config,
     last_set_clipboard: Arc<AtomicU64>,
     last_scroll: Arc<AtomicU64>,
-    scroll_tx: Option<std::sync::mpsc::Sender<ScrollEvent>>,
+    scroll_tx: Option<Sender<ScrollEvent>>,
 }
 
 #[tonic::async_trait]
@@ -124,7 +128,7 @@ impl SynqService for DaemonServer {
 }
 
 fn handle_scroll_event(
-    scroll_sender: &mut scroll::ScrollSender,
+    scroll_sender: &mut ScrollSender,
     event: ScrollEvent,
 ) -> Result<()> {
     scroll_sender.send(event.delta_x, event.delta_y)
@@ -169,8 +173,8 @@ async fn handle_clipboard_event(
     Ok(())
 }
 
-fn run_scroll_sender(rx: std::sync::mpsc::Receiver<ScrollEvent>) {
-    let mut sender = match scroll::ScrollSender::new() {
+fn run_scroll_sender(rx: Receiver<ScrollEvent>) {
+    let mut sender = match ScrollSender::new() {
         Ok(s) => s,
         Err(e) => {
             let e = Error::wrap(e, ErrorKind::Exec)
@@ -294,14 +298,14 @@ async fn send_clipboard_to_peer(
 
 async fn send_scroll_to_peer(
     peer_address: &str,
-    source: scroll::ScrollSource,
+    source: ScrollSource,
     delta_x: f64,
     delta_y: f64,
 ) -> Result<()> {
     let proto_source = match source {
-        scroll::ScrollSource::Wheel => ScrollSource::Wheel,
-        scroll::ScrollSource::Finger => ScrollSource::Finger,
-        scroll::ScrollSource::Continuous => ScrollSource::Continuous,
+        ScrollSource::Wheel => ProtoScrollSource::Wheel,
+        ScrollSource::Finger => ProtoScrollSource::Finger,
+        ScrollSource::Continuous => ProtoScrollSource::Continuous,
     };
 
     let event = ScrollEvent {
@@ -343,12 +347,25 @@ async fn send_scroll_to_peer(
     Ok(())
 }
 
-async fn run_clipboard_source(config: Config, last_set: Arc<AtomicU64>) -> Result<()> {
+async fn run_clipboard_source(
+    config: Config,
+    last_set: Arc<AtomicU64>,
+    cancel: CancellationToken,
+) -> Result<()> {
     info!("Starting clipboard source");
 
     let mut clipboard_rx = clipboard::watch_clipboard().await?;
 
-    while let Some(_change) = clipboard_rx.recv().await {
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => break,
+            change = clipboard_rx.recv() => {
+                if change.is_none() {
+                    break;
+                }
+            }
+        };
+
         let last_set = last_set.load(Ordering::SeqCst);
         if utils::mono_time_ms().saturating_sub(last_set) < CLIPBOARD_TTL {
             trace!("Ignoring clipboard change within debounce window");
@@ -389,12 +406,13 @@ async fn run_clipboard_source(config: Config, last_set: Arc<AtomicU64>) -> Resul
 
 fn run_scroll_receiver(
     device_path: String,
-    tx: std::sync::mpsc::Sender<scroll::ScrollEvent>,
+    tx: Sender<scroll::ScrollEvent>,
+    cancel: CancellationToken,
 ) -> Result<()> {
-    let mut receiver = scroll::ScrollReceiver::new(&device_path)?;
+    let mut receiver = ScrollReceiver::new(&device_path)?;
     info!("Started scroll receiver on {}", device_path);
 
-    loop {
+    while !cancel.is_cancelled() {
         match receiver.read_event() {
             Ok(Some(event)) => {
                 trace!(delta_x = event.delta_x, delta_y = event.delta_y, "Scroll event");
@@ -415,15 +433,16 @@ fn run_scroll_receiver(
     Ok(())
 }
 
-async fn run_scroll_source(config: Config) -> Result<()> {
+async fn run_scroll_source(config: Config, cancel: CancellationToken) -> Result<()> {
     info!("Starting scroll source");
 
     let device_path = config.server.scroll_input_device.clone();
     let (tx, rx) = std::sync::mpsc::channel();
-    let rx = Arc::new(std::sync::Mutex::new(rx));
+    let rx = Arc::new(Mutex::new(rx));
 
+    let receiver_cancel = cancel.clone();
     tokio::task::spawn_blocking(move || {
-        if let Err(e) = run_scroll_receiver(device_path, tx) {
+        if let Err(e) = run_scroll_receiver(device_path, tx, receiver_cancel) {
             let e = Error::wrap(e, ErrorKind::Exec)
                 .with_msg("daemon: Scroll receiver thread failed");
             error!(?e);
@@ -431,16 +450,21 @@ async fn run_scroll_source(config: Config) -> Result<()> {
     });
 
     loop {
-        let event = match tokio::task::spawn_blocking({
-            let rx = rx.clone();
-            move || rx.lock().unwrap().recv()
-        }).await {
-            Ok(Ok(event)) => event,
-            Ok(Err(_)) => break,
-            Err(e) => {
-                let e = Error::wrap(e, ErrorKind::Exec)
-                    .with_msg("daemon: Scroll receiver task failed");
-                return Err(e);
+        let event = tokio::select! {
+            _ = cancel.cancelled() => break,
+            result = tokio::task::spawn_blocking({
+                let rx = rx.clone();
+                move || rx.lock().unwrap().recv()
+            }) => {
+                match result {
+                    Ok(Ok(event)) => event,
+                    Ok(Err(_)) => break,
+                    Err(e) => {
+                        let e = Error::wrap(e, ErrorKind::Exec)
+                            .with_msg("daemon: Scroll receiver task failed");
+                        return Err(e);
+                    }
+                }
             }
         };
 
@@ -496,6 +520,7 @@ pub async fn run(config: Config) -> Result<()> {
 
     let last_set_clipboard = Arc::new(AtomicU64::new(0));
     let last_scroll = Arc::new(AtomicU64::new(0));
+    let cancel = CancellationToken::new();
     let mut handles = Vec::new();
 
     if should_run_server {
@@ -514,8 +539,9 @@ pub async fn run(config: Config) -> Result<()> {
     if should_run_clipboard_source {
         let clipboard_config = config.clone();
         let last_set = last_set_clipboard.clone();
+        let clipboard_cancel = cancel.clone();
         handles.push(tokio::spawn(async move {
-            if let Err(e) = run_clipboard_source(clipboard_config, last_set).await {
+            if let Err(e) = run_clipboard_source(clipboard_config, last_set, clipboard_cancel).await {
                 let e = Error::wrap(e, ErrorKind::Exec)
                     .with_msg("daemon: Clipboard source error");
                 error!(?e);
@@ -525,8 +551,9 @@ pub async fn run(config: Config) -> Result<()> {
 
     if should_run_scroll_source {
         let scroll_config = config.clone();
+        let scroll_cancel = cancel.clone();
         handles.push(tokio::spawn(async move {
-            if let Err(e) = run_scroll_source(scroll_config).await {
+            if let Err(e) = run_scroll_source(scroll_config, scroll_cancel).await {
                 let e = Error::wrap(e, ErrorKind::Exec)
                     .with_msg("daemon: Scroll source error");
                 error!(?e);
@@ -537,10 +564,12 @@ pub async fn run(config: Config) -> Result<()> {
     if config.server.scroll_destination {
         let device_path = config.server.scroll_input_device.clone();
         let last_scr = last_scroll.clone();
+        let blocker_cancel = cancel.clone();
+        let blocker_fd: Arc<AtomicI32> = Arc::new(AtomicI32::new(-1));
+        let blocker_fd_ref = blocker_fd.clone();
+
         tokio::task::spawn_blocking(move || {
-            let mut blocker: scroll::ScrollBlocker = match scroll::ScrollBlocker::new(
-                &device_path, last_scr,
-            ) {
+            let mut blocker = match ScrollBlocker::new(&device_path, last_scr) {
                 Ok(b) => b,
                 Err(e) => {
                     let e = Error::wrap(e, ErrorKind::Exec)
@@ -550,10 +579,20 @@ pub async fn run(config: Config) -> Result<()> {
                 }
             };
             info!("Started scroll blocker on {}", device_path);
-            if let Err(e) = blocker.run() {
+            blocker_fd_ref.store(blocker.device_fd(), Ordering::SeqCst);
+            if let Err(e) = blocker.run(blocker_cancel) {
                 let e = Error::wrap(e, ErrorKind::Exec)
                     .with_msg("daemon: Scroll blocker error");
                 error!(?e);
+            }
+        });
+
+        let close_cancel = cancel.clone();
+        tokio::spawn(async move {
+            close_cancel.cancelled().await;
+            let fd = blocker_fd.load(Ordering::SeqCst);
+            if fd >= 0 {
+                ScrollBlocker::release(fd);
             }
         });
     }
@@ -572,7 +611,8 @@ pub async fn run(config: Config) -> Result<()> {
         }
     }
 
-    // TODO
+    cancel.cancel();
+
     for handle in handles {
         handle.abort();
     }
