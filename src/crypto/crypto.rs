@@ -5,19 +5,16 @@ use crypto_box::{
 };
 
 use crate::errors::{Result, Error, ErrorKind};
-use super::utils::{decode_public_key, decode_secret_key};
+use super::store::KeyStore;
 
 const NONCE_SIZE: usize = 24;
 
 pub fn encrypt(
-    host_private_key_b64: &str,
+    store: &KeyStore,
     client_public_key_b64: &str,
     plaintext: &str,
 ) -> Result<String> {
-    let host_secret_key = decode_secret_key(host_private_key_b64)?;
-    let client_public_key = decode_public_key(client_public_key_b64)?;
-
-    let salsa_box = SalsaBox::new(&client_public_key, &host_secret_key);
+    let salsa_box = store.get_box(client_public_key_b64)?;
 
     let nonce = SalsaBox::generate_nonce(&mut OsRng);
 
@@ -34,12 +31,11 @@ pub fn encrypt(
 }
 
 pub fn decrypt(
-    host_private_key_b64: &str,
+    store: &KeyStore,
     client_public_key_b64: &str,
     ciphertext_b64: &str,
 ) -> Result<String> {
-    let host_secret_key = decode_secret_key(host_private_key_b64)?;
-    let client_public_key = decode_public_key(client_public_key_b64)?;
+    let salsa_box = store.get_box(client_public_key_b64)?;
 
     let combined = STANDARD_NO_PAD
         .decode(ciphertext_b64)
@@ -53,8 +49,6 @@ pub fn decrypt(
 
     let (nonce_bytes, ciphertext) = combined.split_at(NONCE_SIZE);
     let nonce = Nonce::from_slice(nonce_bytes);
-
-    let salsa_box = SalsaBox::new(&client_public_key, &host_secret_key);
 
     let plaintext_bytes = salsa_box
         .decrypt(nonce, ciphertext)
