@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use std::sync::mpsc::{Sender, Receiver};
 use std::sync::Mutex;
+
 use tracing::{error, info, warn, trace};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
@@ -36,7 +37,6 @@ const CLIPBOARD_TTL: u64 = 500;
 pub struct DaemonServer {
     config: Config,
     last_set_clipboard: Arc<AtomicU64>,
-    last_scroll: Arc<AtomicU64>,
     scroll_tx: Option<Sender<ScrollEvent>>,
 }
 
@@ -176,7 +176,7 @@ async fn handle_clipboard_event(
 
 fn run_scroll_sender(
     rx: Receiver<ScrollEvent>,
-    last_scroll: Arc<AtomicU64>,
+    last_active: Arc<AtomicU64>,
 ) {
     let mut sender = match ScrollSender::new() {
         Ok(s) => s,
@@ -201,7 +201,7 @@ fn run_scroll_sender(
 async fn run_server(
     config: Config,
     last_set_clipboard: Arc<AtomicU64>,
-    last_scroll: Arc<AtomicU64>,
+    last_active: Arc<AtomicU64>,
 ) -> Result<()> {
     let addr = config.server.bind.parse()
         .map_err(|e| Error::wrap(e, ErrorKind::Parse)
@@ -210,9 +210,9 @@ async fn run_server(
     let scroll_tx = if config.server.scroll_destination {
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::task::spawn_blocking({
-            let last_scroll = last_scroll.clone();
+            let last_active = last_active.clone();
             move || {
-                run_scroll_sender(rx, last_scroll);
+                run_scroll_sender(rx, last_active);
             }
         });
         Some(tx)
@@ -223,7 +223,6 @@ async fn run_server(
     let server = DaemonServer {
         config,
         last_set_clipboard,
-        last_scroll,
         scroll_tx,
     };
 
@@ -533,14 +532,14 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     let last_set_clipboard = Arc::new(AtomicU64::new(0));
-    let last_scroll = Arc::new(AtomicU64::new(0));
+    let last_active = Arc::new(AtomicU64::new(0));
     let cancel = CancellationToken::new();
     let mut handles = Vec::new();
 
     if should_run_server {
         let server_config = config.clone();
         let last_set = last_set_clipboard.clone();
-        let last_scr = last_scroll.clone();
+        let last_scr = last_active.clone();
         handles.push(tokio::spawn(async move {
             if let Err(e) = run_server(server_config, last_set, last_scr).await {
                 let e = Error::wrap(e, ErrorKind::Network)
@@ -577,7 +576,7 @@ pub async fn run(config: Config) -> Result<()> {
 
     if config.server.scroll_destination {
         let device_path = config.server.scroll_input_device.clone();
-        let last_scr = last_scroll.clone();
+        let last_scr = last_active.clone();
         let blocker_cancel = cancel.clone();
         let blocker_fd: Arc<AtomicI32> = Arc::new(AtomicI32::new(-1));
         let blocker_fd_ref = blocker_fd.clone();
