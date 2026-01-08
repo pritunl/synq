@@ -1,6 +1,6 @@
 use std::fs::{File, OpenOptions};
 use std::mem;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsRawFd, RawFd};
 
 use crate::errors::{Error, ErrorKind, Result};
 use super::constants::{
@@ -8,20 +8,38 @@ use super::constants::{
     UI_SET_KEYBIT,
     UI_SET_RELBIT,
     UI_SET_ABSBIT,
+    UI_SET_MSCBIT,
+    UI_SET_LEDBIT,
+    UI_SET_SNDBIT,
+    UI_SET_FFBIT,
+    UI_SET_SWBIT,
     UI_ABS_SETUP,
     UI_DEV_SETUP,
     UI_DEV_CREATE,
     EV_KEY,
     EV_REL,
     EV_ABS,
+    EV_MSC,
+    EV_SW,
+    EV_LED,
+    EV_SND,
+    EV_FF,
+    EV_MAX,
+    KEY_MAX,
+    REL_MAX,
+    ABS_MAX,
+    MSC_MAX,
+    SW_MAX,
+    LED_MAX,
+    SND_MAX,
+    FF_MAX,
     REL_WHEEL,
     REL_HWHEEL,
     REL_WHEEL_HI_RES,
     REL_HWHEEL_HI_RES,
-    VIRTIO_TABLET_NAME,
-    VIRTIO_TABLET_ID,
     SCROLL_DEVICE_NAME,
     SCROLL_DEVICE_ID,
+    EVIOCGID,
 };
 
 #[repr(C)]
@@ -48,7 +66,7 @@ struct UinputSetup {
     ff_effects_max: u32,
 }
 
-pub(crate) fn setup_uinput_virtio() -> Result<File> {
+pub(crate) fn setup_uinput_clone(source_fd: RawFd) -> Result<File> {
     let uinput = OpenOptions::new()
         .read(true)
         .write(true)
@@ -58,66 +76,169 @@ pub(crate) fn setup_uinput_virtio() -> Result<File> {
                 .with_msg("scroll: Failed to open uinput device")
         })?;
 
-    let fd = uinput.as_raw_fd();
+    let ufd = uinput.as_raw_fd();
 
     unsafe {
-        if libc::ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0 {
+        let mut ev_bits = [0u8; (EV_MAX + 7) / 8 + 1];
+        if libc::ioctl(
+            source_fd,
+            eviocgbit(0, ev_bits.len() as u32),
+            ev_bits.as_mut_ptr(),
+        ) < 0 {
             return Err(Error::wrap(std::io::Error::last_os_error(), ErrorKind::Exec)
-                .with_msg("scroll: Failed to set EV_KEY"));
-        }
-        if libc::ioctl(fd, UI_SET_EVBIT, EV_REL) < 0 {
-            return Err(Error::wrap(std::io::Error::last_os_error(), ErrorKind::Exec)
-                .with_msg("scroll: Failed to set EV_REL"));
-        }
-        if libc::ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0 {
-            return Err(Error::wrap(std::io::Error::last_os_error(), ErrorKind::Exec)
-                .with_msg("scroll: Failed to set EV_ABS"));
+                .with_msg("scroll: Failed to get event types from source device"));
         }
 
-        libc::ioctl(fd, UI_SET_RELBIT, REL_WHEEL as libc::c_int);
-        libc::ioctl(fd, UI_SET_RELBIT, REL_HWHEEL as libc::c_int);
-
-        for btn in [272, 273, 274, 275, 276, 330, 336, 337] {
-            libc::ioctl(fd, UI_SET_KEYBIT, btn as libc::c_int);
+        if bit_is_set(&ev_bits, EV_KEY as usize) {
+            libc::ioctl(ufd, UI_SET_EVBIT, EV_KEY);
+            let mut key_bits = [0u8; (KEY_MAX + 7) / 8 + 1];
+            if libc::ioctl(
+                source_fd,
+                eviocgbit(EV_KEY as u32, key_bits.len() as u32),
+                key_bits.as_mut_ptr(),
+            ) >= 0 {
+                for code in 0..=KEY_MAX {
+                    if bit_is_set(&key_bits, code) {
+                        libc::ioctl(ufd, UI_SET_KEYBIT, code as libc::c_int);
+                    }
+                }
+            }
         }
 
-        libc::ioctl(fd, UI_SET_ABSBIT, 0x00 as libc::c_int); // ABS_X
-        libc::ioctl(fd, UI_SET_ABSBIT, 0x01 as libc::c_int); // ABS_Y
+        if bit_is_set(&ev_bits, EV_REL as usize) {
+            libc::ioctl(ufd, UI_SET_EVBIT, EV_REL);
+            let mut rel_bits = [0u8; (REL_MAX + 7) / 8 + 1];
+            if libc::ioctl(
+                source_fd,
+                eviocgbit(EV_REL as u32, rel_bits.len() as u32),
+                rel_bits.as_mut_ptr(),
+            ) >= 0 {
+                for code in 0..=REL_MAX {
+                    if bit_is_set(&rel_bits, code) {
+                        libc::ioctl(ufd, UI_SET_RELBIT, code as libc::c_int);
+                    }
+                }
+            }
+        }
 
-        let abs_x = UinputAbsSetup {
-            code: 0x00,
-            _padding: 0,
-            absinfo: AbsInfo {
-                value: 0,
-                minimum: 0,
-                maximum: 32767,
-                fuzz: 0,
-                flat: 0,
-                resolution: 0,
-            },
-        };
-        libc::ioctl(fd, UI_ABS_SETUP, &abs_x);
+        if bit_is_set(&ev_bits, EV_ABS as usize) {
+            libc::ioctl(ufd, UI_SET_EVBIT, EV_ABS);
+            let mut abs_bits = [0u8; (ABS_MAX + 7) / 8 + 1];
+            if libc::ioctl(
+                source_fd,
+                eviocgbit(EV_ABS as u32, abs_bits.len() as u32),
+                abs_bits.as_mut_ptr(),
+            ) >= 0 {
+                for code in 0..=ABS_MAX {
+                    if bit_is_set(&abs_bits, code) {
+                        libc::ioctl(ufd, UI_SET_ABSBIT, code as libc::c_int);
 
-        let abs_y = UinputAbsSetup {
-            code: 0x01,
-            _padding: 0,
-            absinfo: AbsInfo {
-                value: 0,
-                minimum: 0,
-                maximum: 32767,
-                fuzz: 0,
-                flat: 0,
-                resolution: 0,
-            },
-        };
-        libc::ioctl(fd, UI_ABS_SETUP, &abs_y);
+                        let mut absinfo: AbsInfo = mem::zeroed();
+                        if libc::ioctl(source_fd, eviocgabs(code as u32), &mut absinfo) >= 0 {
+                            let abs_setup = UinputAbsSetup {
+                                code: code as u16,
+                                _padding: 0,
+                                absinfo,
+                            };
+                            libc::ioctl(ufd, UI_ABS_SETUP, &abs_setup);
+                        }
+                    }
+                }
+            }
+        }
+
+        if bit_is_set(&ev_bits, EV_MSC as usize) {
+            libc::ioctl(ufd, UI_SET_EVBIT, EV_MSC);
+            let mut msc_bits = [0u8; (MSC_MAX + 7) / 8 + 1];
+            if libc::ioctl(
+                source_fd,
+                eviocgbit(EV_MSC as u32, msc_bits.len() as u32),
+                msc_bits.as_mut_ptr(),
+            ) >= 0 {
+                for code in 0..=MSC_MAX {
+                    if bit_is_set(&msc_bits, code) {
+                        libc::ioctl(ufd, UI_SET_MSCBIT, code as libc::c_int);
+                    }
+                }
+            }
+        }
+
+        if bit_is_set(&ev_bits, EV_SW as usize) {
+            libc::ioctl(ufd, UI_SET_EVBIT, EV_SW);
+            let mut sw_bits = [0u8; (SW_MAX + 7) / 8 + 1];
+            if libc::ioctl(
+                source_fd,
+                eviocgbit(EV_SW as u32, sw_bits.len() as u32),
+                sw_bits.as_mut_ptr(),
+            ) >= 0 {
+                for code in 0..=SW_MAX {
+                    if bit_is_set(&sw_bits, code) {
+                        libc::ioctl(ufd, UI_SET_SWBIT, code as libc::c_int);
+                    }
+                }
+            }
+        }
+
+        if bit_is_set(&ev_bits, EV_LED as usize) {
+            libc::ioctl(ufd, UI_SET_EVBIT, EV_LED);
+            let mut led_bits = [0u8; (LED_MAX + 7) / 8 + 1];
+            if libc::ioctl(
+                source_fd,
+                eviocgbit(EV_LED as u32, led_bits.len() as u32),
+                led_bits.as_mut_ptr(),
+            ) >= 0 {
+                for code in 0..=LED_MAX {
+                    if bit_is_set(&led_bits, code) {
+                        libc::ioctl(ufd, UI_SET_LEDBIT, code as libc::c_int);
+                    }
+                }
+            }
+        }
+
+        if bit_is_set(&ev_bits, EV_SND as usize) {
+            libc::ioctl(ufd, UI_SET_EVBIT, EV_SND);
+            let mut snd_bits = [0u8; (SND_MAX + 7) / 8 + 1];
+            if libc::ioctl(
+                source_fd,
+                eviocgbit(EV_SND as u32, snd_bits.len() as u32),
+                snd_bits.as_mut_ptr(),
+            ) >= 0 {
+                for code in 0..=SND_MAX {
+                    if bit_is_set(&snd_bits, code) {
+                        libc::ioctl(ufd, UI_SET_SNDBIT, code as libc::c_int);
+                    }
+                }
+            }
+        }
+
+        if bit_is_set(&ev_bits, EV_FF as usize) {
+            libc::ioctl(ufd, UI_SET_EVBIT, EV_FF);
+            let mut ff_bits = [0u8; (FF_MAX + 7) / 8 + 1];
+            if libc::ioctl(
+                source_fd,
+                eviocgbit(EV_FF as u32, ff_bits.len() as u32),
+                ff_bits.as_mut_ptr(),
+            ) >= 0 {
+                for code in 0..=FF_MAX {
+                    if bit_is_set(&ff_bits, code) {
+                        libc::ioctl(ufd, UI_SET_FFBIT, code as libc::c_int);
+                    }
+                }
+            }
+        }
+
+        let mut input_id: [u16; 4] = [0; 4];
+        libc::ioctl(source_fd, EVIOCGID, input_id.as_mut_ptr());
+
+        let mut name = [0u8; 80];
+        libc::ioctl(source_fd, eviocgname(80), name.as_mut_ptr());
 
         let mut setup: UinputSetup = mem::zeroed();
-        setup.id = VIRTIO_TABLET_ID;
-        setup.name[..VIRTIO_TABLET_NAME.len()].copy_from_slice(VIRTIO_TABLET_NAME);
+        setup.id = input_id;
+        setup.name = name;
 
-        libc::ioctl(fd, UI_DEV_SETUP, &setup);
-        libc::ioctl(fd, UI_DEV_CREATE, 0);
+        libc::ioctl(ufd, UI_DEV_SETUP, &setup);
+        libc::ioctl(ufd, UI_DEV_CREATE, 0);
     }
 
     std::thread::sleep(std::time::Duration::from_millis(200));
@@ -157,4 +278,22 @@ pub(crate) fn setup_uinput_scroll() -> Result<File> {
 
     std::thread::sleep(std::time::Duration::from_millis(200));
     Ok(uinput)
+}
+
+fn bit_is_set(bits: &[u8], bit: usize) -> bool {
+    let byte_idx = bit / 8;
+    let bit_idx = bit % 8;
+    byte_idx < bits.len() && (bits[byte_idx] & (1 << bit_idx)) != 0
+}
+
+const fn eviocgname(len: u32) -> libc::c_ulong {
+    (2u64 << 30) | (((len as u64) & 0x3fff) << 16) | (0x45u64 << 8) | 0x06
+}
+
+const fn eviocgbit(ev: u32, len: u32) -> libc::c_ulong {
+    (2u64 << 30) | (((len as u64) & 0x3fff) << 16) | (0x45u64 << 8) | (0x20 + ev) as u64
+}
+
+const fn eviocgabs(abs: u32) -> libc::c_ulong {
+    (2u64 << 30) | (24u64 << 16) | (0x45u64 << 8) | (0x40 + abs) as u64
 }
