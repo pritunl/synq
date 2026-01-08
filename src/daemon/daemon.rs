@@ -4,6 +4,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::sync::Mutex;
 use tracing::{error, info, warn, trace};
 use tokio::sync::mpsc;
+use tokio::time::{sleep, Duration};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
@@ -617,5 +618,6 @@ pub async fn run(config: Config) -> Result<()> {
         handle.abort();
     }
 
+    sleep(Duration::from_millis(500)).await;
     std::process::exit(0)
 }
