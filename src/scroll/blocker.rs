@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 use tracing::trace;
-use tracing::info;
 
 use crate::errors::{Error, ErrorKind, Result};
 use crate::utils;
