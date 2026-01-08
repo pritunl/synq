@@ -20,7 +20,7 @@ use super::constants::{
     REL_HWHEEL_HI_RES,
 };
 use super::event::InputEvent;
-use super::utils::setup_uinput_virtio;
+use super::utils::setup_uinput_clone;
 
 pub struct ScrollBlocker {
     device: File,
@@ -42,13 +42,14 @@ impl ScrollBlocker {
             })?;
 
         let fd = device.as_raw_fd();
+
+        let uinput = setup_uinput_clone(fd)?;
+
         if unsafe { libc::ioctl(fd, EVIOCGRAB, 1) } != 0 {
             return Err(Error::wrap(std::io::Error::last_os_error(), ErrorKind::Exec)
                 .with_msg("scroll: Failed to grab input device")
                 .with_ctx("path", path.display()));
         }
-
-        let uinput = setup_uinput_virtio()?;
 
         Ok(Self {
             device,
