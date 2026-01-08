@@ -174,7 +174,10 @@ async fn handle_clipboard_event(
     Ok(())
 }
 
-fn run_scroll_sender(rx: Receiver<ScrollEvent>) {
+fn run_scroll_sender(
+    rx: Receiver<ScrollEvent>,
+    last_scroll: Arc<AtomicU64>,
+) {
     let mut sender = match ScrollSender::new() {
         Ok(s) => s,
         Err(e) => {
@@ -206,13 +209,23 @@ async fn run_server(
 
     let scroll_tx = if config.server.scroll_destination {
         let (tx, rx) = std::sync::mpsc::channel();
-        tokio::task::spawn_blocking(move || run_scroll_sender(rx));
+        tokio::task::spawn_blocking({
+            let last_scroll = last_scroll.clone();
+            move || {
+                run_scroll_sender(rx, last_scroll);
+            }
+        });
         Some(tx)
     } else {
         None
     };
 
-    let server = DaemonServer { config, last_set_clipboard, last_scroll, scroll_tx };
+    let server = DaemonServer {
+        config,
+        last_set_clipboard,
+        last_scroll,
+        scroll_tx,
+    };
 
     info!("Daemon server listening on {}", addr);
 
