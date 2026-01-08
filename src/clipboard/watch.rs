@@ -17,7 +17,6 @@ use crate::errors::{Result, Error, ErrorKind};
 
 #[derive(Clone, Debug)]
 pub struct ClipboardChange {
-    pub timestamp: u32,
 }
 
 struct X11State {
@@ -123,9 +122,7 @@ impl X11State {
 
                         trace!("Clipboard changed at timestamp {}", notify.timestamp);
 
-                        let change = ClipboardChange {
-                            timestamp: notify.timestamp,
-                        };
+                        let change = ClipboardChange {};
 
                         tx.blocking_send(change)
                             .map_err(|e| Error::wrap(e, ErrorKind::Network)
