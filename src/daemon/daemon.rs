@@ -22,6 +22,7 @@ use futures::stream;
 use crate::errors::{Result, Error, ErrorKind};
 use crate::config::Config;
 use crate::crypto;
+use crate::crypto::KeyStore;
 use crate::clipboard;
 use crate::scroll;
 use crate::scroll::{ScrollSender, ScrollReceiver, ScrollBlocker, ScrollSource};
@@ -36,6 +37,7 @@ const CLIPBOARD_TTL: u64 = 500;
 
 pub struct DaemonServer {
     config: Config,
+    key_store: Arc<KeyStore>,
     last_set_clipboard: Arc<AtomicU64>,
     scroll_tx: Option<Sender<ScrollEvent>>,
 }
@@ -100,6 +102,7 @@ impl SynqService for DaemonServer {
         trace!("Clipboard connection established");
 
         let config = self.config.clone();
+        let key_store = self.key_store.clone();
         let last_set_clipboard = self.last_set_clipboard.clone();
         let mut in_stream = request.into_inner();
 
@@ -108,7 +111,7 @@ impl SynqService for DaemonServer {
                 match result {
                     Ok(event) => {
                         if let Err(e) = handle_clipboard_event(
-                            &config, &last_set_clipboard, event,
+                            &config, &key_store, &last_set_clipboard, event,
                         ).await {
                             error!(?e);
                         }
@@ -137,6 +140,7 @@ fn handle_scroll_event(
 
 async fn handle_clipboard_event(
     config: &Config,
+    key_store: &KeyStore,
     last_set_clipboard: &AtomicU64,
     event: ClipboardEvent,
 ) -> Result<()> {
@@ -161,7 +165,7 @@ async fn handle_clipboard_event(
             .with_msg("daemon: Invalid UTF-8 in clipboard ciphertext"))?;
 
     let plaintext = crypto::decrypt(
-        &config.server.private_key,
+        key_store,
         &peer.public_key,
         &ciphertext,
     )?;
@@ -200,6 +204,7 @@ fn run_scroll_sender(
 
 async fn run_server(
     config: Config,
+    key_store: Arc<KeyStore>,
     last_set_clipboard: Arc<AtomicU64>,
     last_active: Arc<AtomicU64>,
 ) -> Result<()> {
@@ -222,6 +227,7 @@ async fn run_server(
 
     let server = DaemonServer {
         config,
+        key_store,
         last_set_clipboard,
         scroll_tx,
     };
@@ -261,12 +267,13 @@ async fn connect_to_peer(address: &str) -> Result<SynqServiceClient<Channel>> {
 
 async fn send_clipboard_to_peer(
     config: &Config,
+    key_store: &KeyStore,
     peer_address: &str,
     peer_public_key: &str,
     clipboard_text: &str,
 ) -> Result<()> {
     let encrypted = crypto::encrypt(
-        &config.server.private_key,
+        key_store,
         peer_public_key,
         clipboard_text,
     )?;
@@ -362,6 +369,7 @@ async fn send_scroll_to_peer(
 
 async fn run_clipboard_source(
     config: Config,
+    key_store: Arc<KeyStore>,
     last_set: Arc<AtomicU64>,
     cancel: CancellationToken,
 ) -> Result<()> {
@@ -401,6 +409,7 @@ async fn run_clipboard_source(
             if peer.clipboard_destination {
                 if let Err(e) = send_clipboard_to_peer(
                     &config,
+                    &key_store,
                     &peer.address,
                     &peer.public_key,
                     &clipboard_text,
@@ -531,6 +540,10 @@ pub async fn run(config: Config) -> Result<()> {
             .with_msg("daemon: No services configured"));
     }
 
+    let key_store = Arc::new(KeyStore::new(&config.server.private_key)
+        .map_err(|e| Error::wrap(e, ErrorKind::Exec)
+            .with_msg("daemon: Failed to create key store"))?);
+
     let last_set_clipboard = Arc::new(AtomicU64::new(0));
     let last_active = Arc::new(AtomicU64::new(0));
     let cancel = CancellationToken::new();
@@ -538,10 +551,11 @@ pub async fn run(config: Config) -> Result<()> {
 
     if should_run_server {
         let server_config = config.clone();
+        let server_key_store = key_store.clone();
         let last_set = last_set_clipboard.clone();
         let last_scr = last_active.clone();
         handles.push(tokio::spawn(async move {
-            if let Err(e) = run_server(server_config, last_set, last_scr).await {
+            if let Err(e) = run_server(server_config, server_key_store, last_set, last_scr).await {
                 let e = Error::wrap(e, ErrorKind::Network)
                     .with_msg("daemon: Server error");
                 error!(?e);
@@ -551,10 +565,11 @@ pub async fn run(config: Config) -> Result<()> {
 
     if should_run_clipboard_source {
         let clipboard_config = config.clone();
+        let clipboard_key_store = key_store.clone();
         let last_set = last_set_clipboard.clone();
         let clipboard_cancel = cancel.clone();
         handles.push(tokio::spawn(async move {
-            if let Err(e) = run_clipboard_source(clipboard_config, last_set, clipboard_cancel).await {
+            if let Err(e) = run_clipboard_source(clipboard_config, clipboard_key_store, last_set, clipboard_cancel).await {
                 let e = Error::wrap(e, ErrorKind::Exec)
                     .with_msg("daemon: Clipboard source error");
                 error!(?e);
