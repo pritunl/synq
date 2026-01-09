@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Sender, Receiver};
 
 use tracing::{error, info, warn, trace};
+use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::{
     transport::Server as TonicServer,
@@ -29,7 +29,7 @@ pub struct DaemonReceiver {
     config: Config,
     key_store: Arc<KeyStore>,
     last_set_clipboard: Arc<AtomicU64>,
-    scroll_tx: Option<Sender<ScrollEvent>>,
+    scroll_tx: Option<mpsc::Sender<ScrollEvent>>,
 }
 
 #[tonic::async_trait]
@@ -61,7 +61,7 @@ impl SynqService for DaemonReceiver {
                             "Scroll event: delta_x={} delta_y={}",
                             evt.delta_x, evt.delta_y,
                         );
-                        if scroll_tx.send(evt).is_err() {
+                        if scroll_tx.send(evt).await.is_err() {
                             error!("Scroll sender channel closed");
                             break;
                         }
@@ -129,7 +129,7 @@ impl DaemonReceiver {
     }
 
     fn run_scroll(
-        rx: Receiver<ScrollEvent>,
+        mut rx: mpsc::Receiver<ScrollEvent>,
         last_active: Arc<AtomicU64>,
     ) {
         let mut sender = match ScrollSender::new() {
@@ -143,7 +143,7 @@ impl DaemonReceiver {
         };
         info!("Started scroll sender");
 
-        while let Ok(event) = rx.recv() {
+        while let Some(event) = rx.blocking_recv() {
             // TODO
             // let last = last_active.load(Ordering::SeqCst);
             // if utils::mono_time_ms().saturating_sub(last) > 500 {
@@ -210,7 +210,7 @@ impl DaemonReceiver {
                 .with_msg("daemon: Failed to parse bind address"))?;
 
         let scroll_tx = if config.server.scroll_destination {
-            let (tx, rx) = std::sync::mpsc::channel();
+            let (tx, rx) = mpsc::channel(32);
             tokio::task::spawn_blocking({
                 let last_active = last_active.clone();
                 move || {
