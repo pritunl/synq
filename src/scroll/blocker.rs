@@ -54,7 +54,7 @@ impl ScrollBlocker {
         Ok(Self {
             device,
             uinput,
-            last_scroll
+            last_scroll,
         })
     }
 
