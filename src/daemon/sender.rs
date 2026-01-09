@@ -1,7 +1,5 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
-use std::sync::mpsc::Sender;
-use std::sync::Mutex;
 
 use tracing::{error, info, warn, trace};
 use tokio::sync::mpsc;
@@ -213,7 +211,7 @@ impl DaemonSender {
 
     fn run_scroll_stream(
         device_path: String,
-        tx: Sender<scroll::ScrollEvent>,
+        tx: mpsc::Sender<scroll::ScrollEvent>,
         cancel: CancellationToken,
     ) -> Result<()> {
         let mut receiver = ScrollReceiver::new(&device_path)?;
@@ -227,7 +225,7 @@ impl DaemonSender {
                         delta_y = event.delta_y,
                         "Scroll event",
                     );
-                    if tx.send(event).is_err() {
+                    if tx.blocking_send(event).is_err() {
                         break;
                     }
                 }
@@ -248,8 +246,7 @@ impl DaemonSender {
         info!("Starting scroll source");
 
         let device_path = config.server.scroll_input_device.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
-        let rx = Arc::new(Mutex::new(rx));
+        let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
         let receiver_cancel = cancel.clone();
         tokio::task::spawn_blocking(move || {
@@ -267,18 +264,10 @@ impl DaemonSender {
         loop {
             let event = tokio::select! {
                 _ = cancel.cancelled() => break,
-                result = tokio::task::spawn_blocking({
-                    let rx = rx.clone();
-                    move || rx.lock().unwrap().recv()
-                }) => {
+                result = rx.recv() => {
                     match result {
-                        Ok(Ok(event)) => event,
-                        Ok(Err(_)) => break,
-                        Err(e) => {
-                            let e = Error::wrap(e, ErrorKind::Exec)
-                                .with_msg("daemon: Scroll receiver task failed");
-                            return Err(e);
-                        }
+                        Some(event) => event,
+                        None => break,
                     }
                 }
             };
