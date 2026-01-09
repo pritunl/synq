@@ -45,6 +45,7 @@ impl KeyStore {
         Ok(salsa_box)
     }
 
+    #[allow(unused)]
     pub fn remove(&self, client_public_key_b64: &str) -> Result<bool> {
         let mut boxes = self.boxes.write().map_err(|_| {
             Error::new(ErrorKind::Exec).with_msg("crypto: lock poisoned")
@@ -52,6 +53,7 @@ impl KeyStore {
         Ok(boxes.remove(client_public_key_b64).is_some())
     }
 
+    #[allow(unused)]
     pub fn clear(&self) -> Result<()> {
         let mut boxes = self.boxes.write().map_err(|_| {
             Error::new(ErrorKind::Exec).with_msg("crypto: lock poisoned")
