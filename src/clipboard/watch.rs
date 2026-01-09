@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use tracing::{trace, error};
 use tokio::sync::mpsc;
 use x11rb::{
@@ -23,7 +25,7 @@ struct X11State {
     conn: RustConnection,
     window: Window,
     clip_atom: Atom,
-    last_timestamp: std::sync::Mutex<u32>,
+    last_timestamp: Mutex<u32>,
 }
 
 impl X11State {
@@ -69,7 +71,7 @@ impl X11State {
             conn,
             window,
             clip_atom,
-            last_timestamp: std::sync::Mutex::new(0),
+            last_timestamp: Mutex::new(0),
         })
     }
 
