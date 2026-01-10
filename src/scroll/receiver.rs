@@ -5,7 +5,7 @@ use std::path::Path;
 
 use input::event::pointer::{Axis, PointerEvent, PointerScrollEvent};
 use input::{Event, Libinput, LibinputInterface};
-use libc::{O_RDONLY, O_RDWR, O_WRONLY};
+use libc::{O_RDONLY, O_RDWR, O_WRONLY, O_ACCMODE};
 use tracing::trace;
 
 use crate::errors::{Error, ErrorKind, Result};
@@ -22,10 +22,12 @@ impl LibinputInterface for Interface {
         path: &Path,
         flags: i32,
     ) -> std::result::Result<OwnedFd, i32> {
+        let access_mode = flags & O_ACCMODE;
+
         OpenOptions::new()
             .custom_flags(flags)
-            .read((flags & O_RDONLY != 0) | (flags & O_RDWR != 0))
-            .write((flags & O_WRONLY != 0) | (flags & O_RDWR != 0))
+            .read(access_mode == O_RDONLY || access_mode == O_RDWR)
+            .write(access_mode == O_WRONLY || access_mode == O_RDWR)
             .open(path)
             .map(|file| file.into())
             .map_err(|err| err.raw_os_error().unwrap_or(-1))
