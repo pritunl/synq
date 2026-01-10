@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::OwnedFd;
@@ -39,6 +40,42 @@ pub struct Device {
     pub path: String,
     pub capabilities: Vec<DeviceCapability>,
     pub scroll_methods: Vec<ScrollMethod>,
+}
+
+impl fmt::Display for Device {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Device: {}", self.name)?;
+        writeln!(f, "  Path: {}", self.path)?;
+
+        let caps: Vec<&str> = self
+            .capabilities
+            .iter()
+            .map(|c| match c {
+                DeviceCapability::Keyboard => "keyboard",
+                DeviceCapability::Pointer => "pointer",
+                DeviceCapability::Touch => "touch",
+                DeviceCapability::TabletTool => "tablet-tool",
+                DeviceCapability::TabletPad => "tablet-pad",
+                DeviceCapability::Gesture => "gesture",
+                DeviceCapability::Switch => "switch",
+                _ => "unknown",
+            })
+            .collect();
+        writeln!(f, "  Capabilities: {}", caps.join(" "))?;
+
+        let methods: Vec<&str> = self
+            .scroll_methods
+            .iter()
+            .map(|m| match m {
+                ScrollMethod::NoScroll => "none",
+                ScrollMethod::TwoFinger => "two-finger",
+                ScrollMethod::Edge => "edge",
+                ScrollMethod::OnButtonDown => "button",
+                _ => "unknown",
+            })
+            .collect();
+        write!(f, "  Scroll methods: {}", methods.join(" "))
+    }
 }
 
 pub fn list_devices() -> Result<Vec<Device>> {
