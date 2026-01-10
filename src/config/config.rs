@@ -32,7 +32,7 @@ pub struct ServerConfig {
     #[serde(default = "default_scroll_reverse")]
     pub scroll_reverse: bool,
     #[serde(default)]
-    pub scroll_input_device: String,
+    pub scroll_input_devices: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
