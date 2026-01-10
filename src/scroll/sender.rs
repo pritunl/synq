@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::mem;
+use std::ptr;
 
 use tracing::trace;
 
@@ -32,7 +33,7 @@ impl ScrollSender {
     pub fn send(&mut self, delta_x: f64, delta_y: f64) -> Result<()> {
         let now = unsafe {
             let mut tv: libc::timeval = mem::zeroed();
-            libc::gettimeofday(&mut tv, std::ptr::null_mut());
+            libc::gettimeofday(&mut tv, ptr::null_mut());
             tv
         };
 
