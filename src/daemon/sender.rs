@@ -245,21 +245,23 @@ impl DaemonSender {
     async fn run_scroll(config: Config, cancel: CancellationToken) -> Result<()> {
         info!("Starting scroll source");
 
-        let device_path = config.server.scroll_input_device.clone();
         let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
-        let receiver_cancel = cancel.clone();
-        tokio::task::spawn_blocking(move || {
-            if let Err(e) = DaemonSender::run_scroll_stream(
-                device_path,
-                tx,
-                receiver_cancel,
-            ) {
-                let e = Error::wrap(e, ErrorKind::Exec)
-                    .with_msg("daemon: Scroll receiver thread failed");
-                error!(?e);
-            }
-        });
+        for device_path in config.server.scroll_input_devices.clone() {
+            let tx = tx.clone();
+            let receiver_cancel = cancel.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Err(e) = DaemonSender::run_scroll_stream(
+                    device_path,
+                    tx,
+                    receiver_cancel,
+                ) {
+                    let e = Error::wrap(e, ErrorKind::Exec)
+                        .with_msg("daemon: Scroll receiver thread failed");
+                    error!(?e);
+                }
+            });
+        }
 
         loop {
             let event = tokio::select! {
@@ -386,39 +388,40 @@ impl DaemonSender {
         }
 
         if config.server.scroll_destination {
-            let device_path = config.server.scroll_input_device.clone();
-            let last_scr = last_active.clone();
-            let blocker_cancel = cancel.clone();
-            let blocker_fd: Arc<AtomicI32> = Arc::new(AtomicI32::new(-1));
-            let blocker_fd_ref = blocker_fd.clone();
+            for device_path in config.server.scroll_input_devices.clone() {
+                let last_scr = last_active.clone();
+                let blocker_cancel = cancel.clone();
+                let blocker_fd: Arc<AtomicI32> = Arc::new(AtomicI32::new(-1));
+                let blocker_fd_ref = blocker_fd.clone();
 
-            tokio::task::spawn_blocking(move || {
-                let mut blocker = match ScrollBlocker::new(&device_path, last_scr) {
-                    Ok(b) => b,
-                    Err(e) => {
+                tokio::task::spawn_blocking(move || {
+                    let mut blocker = match ScrollBlocker::new(&device_path, last_scr) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            let e = Error::wrap(e, ErrorKind::Exec)
+                                .with_msg("daemon: Failed to start scroll blocker");
+                            error!(?e);
+                            return;
+                        }
+                    };
+                    info!("Started scroll blocker on {}", device_path);
+                    blocker_fd_ref.store(blocker.device_fd(), Ordering::SeqCst);
+                    if let Err(e) = blocker.run(blocker_cancel) {
                         let e = Error::wrap(e, ErrorKind::Exec)
-                            .with_msg("daemon: Failed to start scroll blocker");
+                            .with_msg("daemon: Scroll blocker error");
                         error!(?e);
-                        return;
                     }
-                };
-                info!("Started scroll blocker on {}", device_path);
-                blocker_fd_ref.store(blocker.device_fd(), Ordering::SeqCst);
-                if let Err(e) = blocker.run(blocker_cancel) {
-                    let e = Error::wrap(e, ErrorKind::Exec)
-                        .with_msg("daemon: Scroll blocker error");
-                    error!(?e);
-                }
-            });
+                });
 
-            let close_cancel = cancel.clone();
-            tokio::spawn(async move {
-                close_cancel.cancelled().await;
-                let fd = blocker_fd.load(Ordering::SeqCst);
-                if fd >= 0 {
-                    ScrollBlocker::release(fd);
-                }
-            });
+                let close_cancel = cancel.clone();
+                tokio::spawn(async move {
+                    close_cancel.cancelled().await;
+                    let fd = blocker_fd.load(Ordering::SeqCst);
+                    if fd >= 0 {
+                        ScrollBlocker::release(fd);
+                    }
+                });
+            }
         }
 
         let mut sigterm = tokio::signal::unix::signal(
