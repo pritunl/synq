@@ -247,7 +247,8 @@ impl DaemonSender {
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
-        for device_path in config.server.scroll_input_devices.clone() {
+        let device_paths = scroll::resolve_devices(&config.server.scroll_input_devices)?;
+        for device_path in device_paths {
             let tx = tx.clone();
             let receiver_cancel = cancel.clone();
             tokio::task::spawn_blocking(move || {
@@ -388,7 +389,9 @@ impl DaemonSender {
         }
 
         if config.server.scroll_destination {
-            for device_path in config.server.scroll_input_devices.clone() {
+            let blocker_device_paths = scroll::resolve_devices(
+                &config.server.scroll_input_devices)?;
+            for device_path in blocker_device_paths {
                 let last_scr = last_active.clone();
                 let blocker_cancel = cancel.clone();
                 let blocker_fd: Arc<AtomicI32> = Arc::new(AtomicI32::new(-1));
