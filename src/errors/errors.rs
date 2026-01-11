@@ -18,11 +18,11 @@ fn debug_output() -> bool {
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub struct Error {
-    kind: ErrorKind,
-    message: String,
-    source: Option<Box<dyn std::error::Error + Send + Sync>>,
-    backtrace: Backtrace,
-    context: HashMap<String, String>,
+    pub(crate) kind: ErrorKind,
+    pub(crate) message: String,
+    pub(crate) source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    pub(crate) backtrace: Backtrace,
+    pub(crate) context: HashMap<String, String>,
 }
 
 impl Error {
