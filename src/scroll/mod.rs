@@ -3,6 +3,8 @@ mod scroll;
 mod utils;
 mod constants;
 pub use constants::*;
+mod device;
+pub use device::*;
 mod event;
 pub use event::*;
 mod blocker;
