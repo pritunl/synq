@@ -1,8 +1,19 @@
 use std::fmt;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use backtrace::Backtrace;
 
 use super::ErrorKind;
+
+static DEBUG_OUTPUT: AtomicBool = AtomicBool::new(false);
+
+pub fn set_debug_output(enabled: bool) {
+    DEBUG_OUTPUT.store(enabled, Ordering::SeqCst);
+}
+
+fn debug_output() -> bool {
+    DEBUG_OUTPUT.load(Ordering::SeqCst)
+}
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -121,17 +132,25 @@ impl fmt::Debug for Error {
 
         if !self.context.is_empty() {
             writeln!(f, "Context:")?;
-            for (key, value) in &self.context {
-                writeln!(f, "  {}: {}", key, value)?;
+            let len = self.context.len();
+            for (i, (key, value)) in self.context.iter().enumerate() {
+                if i < len - 1 {
+                    writeln!(f, "  {}: {}", key, value)?;
+                } else {
+                    write!(f, "  {}: {}", key, value)?;
+                }
             }
         }
-
         if let Some(source) = &self.source {
-            writeln!(f, "Source: {:?}", source)?;
+            write!(f, "\nSource: {:?}", source)?;
         }
 
-        writeln!(f, "Backtrace:")?;
-        write!(f, "{:?}", self.backtrace)
+        if debug_output() {
+            writeln!(f, "\nBacktrace:")?;
+            write!(f, "{:?}", self.backtrace)?;
+        }
+
+        Ok(())
     }
 }
 
