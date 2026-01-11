@@ -40,6 +40,7 @@ pub struct Device {
     pub path: String,
     pub capabilities: Vec<DeviceCapability>,
     pub scroll_methods: Vec<ScrollMethod>,
+    pub has_scroll: bool,
 }
 
 impl fmt::Display for Device {
@@ -74,6 +75,7 @@ impl fmt::Display for Device {
                 _ => "unknown",
             })
             .collect();
+        writeln!(f, "  Has Scroll: {}", self.has_scroll)?;
         write!(f, "  Scroll methods: {}", methods.join(" "))
     }
 }
@@ -108,11 +110,19 @@ pub fn list_devices() -> Result<Vec<Device>> {
 
             let scroll_methods = dev.config_scroll_methods();
 
+            let has_scroll = scroll_methods.iter().any(|m| {
+                matches!(
+                    m,
+                    ScrollMethod::TwoFinger | ScrollMethod::Edge | ScrollMethod::OnButtonDown,
+                )
+            });
+
             devices.push(Device {
                 name: dev.name().to_string(),
                 path: format!("/dev/input/{}", dev.sysname()),
                 capabilities,
                 scroll_methods,
+                has_scroll,
             });
         }
     }
