@@ -41,6 +41,9 @@ async fn main() -> Result<()> {
             Command::ListDevices => {
                 let devices = scroll::list_devices()?;
                 for device in devices {
+                    if !device.has_scroll {
+                        continue;
+                    }
                     println!("{}", device);
                 }
             }
