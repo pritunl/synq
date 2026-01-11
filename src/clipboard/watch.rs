@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use tracing::{trace, error};
+use crate::errors::{trace, error};
 use tokio::sync::mpsc;
 use x11rb::{
     connection::Connection,
@@ -151,7 +151,7 @@ pub async fn watch_clipboard() -> Result<mpsc::Receiver<ClipboardChange>> {
                 if let Err(e) = init_tx.blocking_send(Ok(())) {
                     let e = Error::wrap(e, ErrorKind::Network)
                         .with_msg("clipboard: Failed to send initialization success");
-                    error!(?e);
+                    error(&e);
                 }
                 state
             }
@@ -159,7 +159,7 @@ pub async fn watch_clipboard() -> Result<mpsc::Receiver<ClipboardChange>> {
                 if let Err(send_err) = init_tx.blocking_send(Err(e)) {
                     let e = Error::wrap(send_err, ErrorKind::Network)
                         .with_msg("clipboard: Failed to send initialization error");
-                    error!(?e);
+                    error(&e);
                 }
                 return;
             }
@@ -168,7 +168,7 @@ pub async fn watch_clipboard() -> Result<mpsc::Receiver<ClipboardChange>> {
         trace!("Starting xlib clipboard watch loop");
 
         if let Err(e) = state.watch_clipboard(tx) {
-            error!(?e);
+            error(&e);
         }
     });
 

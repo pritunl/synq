@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
-use tracing::trace;
+use crate::errors::trace;
 
 use crate::errors::{Error, ErrorKind, Result};
 use crate::utils;

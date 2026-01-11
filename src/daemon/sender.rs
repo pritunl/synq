@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 
-use tracing::{error, info, warn, trace};
+use crate::errors::{error, info, warn, trace};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 use tokio_stream::wrappers::ReceiverStream;
@@ -83,7 +83,7 @@ impl DaemonSender {
                     if let Err(e) = result {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("daemon: Clipboard stream error");
-                        error!(?e);
+                        error(&e);
                         break;
                     }
                 }
@@ -92,7 +92,7 @@ impl DaemonSender {
                 let e = Error::wrap(e, ErrorKind::Network)
                     .with_msg("daemon: Failed to send clipboard")
                     .with_ctx("address", peer_address);
-                error!(?e);
+                error(&e);
             }
         }
 
@@ -134,7 +134,7 @@ impl DaemonSender {
                     if let Err(e) = result {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("daemon: Scroll stream error");
-                        error!(?e);
+                        error(&e);
                         break;
                     }
                 }
@@ -143,7 +143,7 @@ impl DaemonSender {
                 let e = Error::wrap(e, ErrorKind::Network)
                     .with_msg("daemon: Failed to send scroll")
                     .with_ctx("address", peer_address);
-                error!(?e);
+                error(&e);
             }
         }
 
@@ -200,7 +200,7 @@ impl DaemonSender {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("daemon: Failed to send clipboard to peer")
                             .with_ctx("address", &peer.address);
-                        error!(?e);
+                        error(&e);
                     }
                 }
             }
@@ -233,7 +233,7 @@ impl DaemonSender {
                 Err(e) => {
                     let e = Error::wrap(e, ErrorKind::Read)
                         .with_msg("daemon: Scroll receiver error");
-                    error!(?e);
+                    error(&e);
                     return Err(e);
                 }
             }
@@ -259,7 +259,7 @@ impl DaemonSender {
                 ) {
                     let e = Error::wrap(e, ErrorKind::Exec)
                         .with_msg("daemon: Scroll receiver thread failed");
-                    error!(?e);
+                    error(&e);
                 }
             });
         }
@@ -299,7 +299,7 @@ impl DaemonSender {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("daemon: Failed to send scroll to peer")
                             .with_ctx("address", &peer.address);
-                        error!(?e);
+                        error(&e);
                     }
                 }
             }
@@ -349,7 +349,7 @@ impl DaemonSender {
                 ).await {
                     let e = Error::wrap(e, ErrorKind::Network)
                         .with_msg("daemon: Server error");
-                    error!(?e);
+                    error(&e);
                 }
             }));
         }
@@ -368,7 +368,7 @@ impl DaemonSender {
                 ).await {
                     let e = Error::wrap(e, ErrorKind::Exec)
                         .with_msg("daemon: Clipboard source error");
-                    error!(?e);
+                    error(&e);
                 }
             }));
         }
@@ -383,7 +383,7 @@ impl DaemonSender {
                 ).await {
                     let e = Error::wrap(e, ErrorKind::Exec)
                         .with_msg("daemon: Scroll source error");
-                    error!(?e);
+                    error(&e);
                 }
             }));
         }
@@ -403,7 +403,7 @@ impl DaemonSender {
                         Err(e) => {
                             let e = Error::wrap(e, ErrorKind::Exec)
                                 .with_msg("daemon: Failed to start scroll blocker");
-                            error!(?e);
+                            error(&e);
                             return;
                         }
                     };
@@ -412,7 +412,7 @@ impl DaemonSender {
                     if let Err(e) = blocker.run(blocker_cancel) {
                         let e = Error::wrap(e, ErrorKind::Exec)
                             .with_msg("daemon: Scroll blocker error");
-                        error!(?e);
+                        error(&e);
                     }
                 });
 

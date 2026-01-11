@@ -1,4 +1,4 @@
-use tracing::{info, error};
+use crate::errors::{info, error};
 use tokio_stream::StreamExt;
 use tonic::{transport::Server as TonicServer, Request, Response, Status, Streaming};
 use futures::stream;
@@ -34,7 +34,7 @@ impl SynqService for Server {
                     Err(e) => {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("server: Failed to read scroll event");
-                        error!(?e);
+                        error(&e);
                         break;
                     }
                 }
@@ -63,7 +63,7 @@ impl SynqService for Server {
                     Err(e) => {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("server: Failed to read clipboard event");
-                        error!(?e);
+                        error(&e);
                         break;
                     }
                 }

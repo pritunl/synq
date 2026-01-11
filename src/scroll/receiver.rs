@@ -6,7 +6,7 @@ use std::path::Path;
 use input::event::pointer::{Axis, PointerEvent, PointerScrollEvent};
 use input::{Event, Libinput, LibinputInterface};
 use libc::{O_RDONLY, O_RDWR, O_WRONLY, O_ACCMODE};
-use tracing::trace;
+use crate::errors::trace;
 
 use crate::errors::{Error, ErrorKind, Result};
 use super::event::ScrollEvent;

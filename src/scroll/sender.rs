@@ -3,7 +3,7 @@ use std::io::Write;
 use std::mem;
 use std::ptr;
 
-use tracing::trace;
+use crate::errors::trace;
 
 use crate::errors::{Error, ErrorKind, Result};
 use super::event::InputEvent;

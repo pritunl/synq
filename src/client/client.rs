@@ -1,4 +1,4 @@
-use tracing::{error, info};
+use crate::errors::{error, info};
 use tokio::sync::{mpsc, broadcast};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
@@ -52,7 +52,7 @@ impl Client {
                     if let Err(e) = tx.send(event).await {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("client: Failed to queue scroll event");
-                        error!(?e);
+                        error(&e);
                         return;
                     }
                     drop(tx);
@@ -66,7 +66,7 @@ impl Client {
                                 if let Err(e) = result {
                                     let e = Error::wrap(e, ErrorKind::Network)
                                         .with_msg("client: Scroll stream error");
-                                    error!(?e);
+                                    error(&e);
                                     break;
                                 }
                             }
@@ -74,7 +74,7 @@ impl Client {
                         Err(e) => {
                             let e = Error::wrap(e, ErrorKind::Network)
                                 .with_msg("client: Failed to send scroll");
-                            error!(?e);
+                            error(&e);
                         }
                     }
                 }
@@ -102,7 +102,7 @@ impl Client {
                     if let Err(e) = tx.send(event).await {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("client: Failed to queue clipboard event");
-                        error!(?e);
+                        error(&e);
                         return;
                     }
                     drop(tx);
@@ -116,7 +116,7 @@ impl Client {
                                 if let Err(e) = result {
                                     let e = Error::wrap(e, ErrorKind::Network)
                                         .with_msg("client: Clipboard stream error");
-                                    error!(?e);
+                                    error(&e);
                                     break;
                                 }
                             }
@@ -124,7 +124,7 @@ impl Client {
                         Err(e) => {
                             let e = Error::wrap(e, ErrorKind::Network)
                                 .with_msg("client: Failed to send clipboard");
-                            error!(?e);
+                            error(&e);
                         }
                     }
                 }
@@ -168,7 +168,7 @@ impl Client {
                                     let e = Error::wrap(e, ErrorKind::Network)
                                         .with_msg("client: Scroll stream error")
                                         .with_ctx("peer", &peer);
-                                    error!(?e);
+                                    error(&e);
                                     break;
                                 }
                             }
@@ -178,7 +178,7 @@ impl Client {
                             let e = Error::wrap(e, ErrorKind::Network)
                                 .with_msg("client: Failed to establish scroll stream")
                                 .with_ctx("peer", &peer);
-                            error!(?e);
+                            error(&e);
                         }
                     }
                 }
@@ -193,7 +193,7 @@ impl Client {
                         if let Err(e) = tx.send(event).await {
                             let e = Error::wrap(e, ErrorKind::Network)
                                 .with_msg("client: Failed to forward scroll event");
-                            error!(?e);
+                            error(&e);
                             break;
                         }
                     }
@@ -238,7 +238,7 @@ impl Client {
                                     let e = Error::wrap(e, ErrorKind::Network)
                                         .with_msg("client: Clipboard stream error")
                                         .with_ctx("peer", &peer);
-                                    error!(?e);
+                                    error(&e);
                                     break;
                                 }
                             }
@@ -248,7 +248,7 @@ impl Client {
                             let e = Error::wrap(e, ErrorKind::Network)
                                 .with_msg("client: Failed to establish clipboard stream")
                                 .with_ctx("peer", &peer);
-                            error!(?e);
+                            error(&e);
                         }
                     }
                 }
@@ -263,7 +263,7 @@ impl Client {
                         if let Err(e) = tx.send(event).await {
                             let e = Error::wrap(e, ErrorKind::Network)
                                 .with_msg("client: Failed to forward clipboard event");
-                            error!(?e);
+                            error(&e);
                             break;
                         }
                     }
@@ -300,7 +300,7 @@ impl Client {
                     let test_data = b"Test clipboard event".to_vec();
                     info!("Sending test clipboard event");
                     if let Err(e) = client.send_clipboard(test_data).await {
-                        error!(?e);
+                        error(&e);
                     }
                 }
             }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use tracing::{error, info, warn, trace};
+use crate::errors::{error, info, warn, trace};
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::{
@@ -62,14 +62,16 @@ impl SynqService for DaemonReceiver {
                             evt.delta_x, evt.delta_y,
                         );
                         if scroll_tx.send(evt).await.is_err() {
-                            error!("Scroll sender channel closed");
+                            let e = Error::new(ErrorKind::Network)
+                                .with_msg("daemon: Scroll sender channel closed");
+                            error(&e);
                             break;
                         }
                     }
                     Err(e) => {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("daemon: Failed to read scroll event");
-                        error!(?e);
+                        error(&e);
                         break;
                     }
                 }
@@ -102,13 +104,13 @@ impl SynqService for DaemonReceiver {
                         if let Err(e) = DaemonReceiver::handle_clipboard(
                             &config, &key_store, &last_set_clipboard, event,
                         ).await {
-                            error!(?e);
+                            error(&e);
                         }
                     }
                     Err(e) => {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("daemon: Failed to read clipboard event");
-                        error!(?e);
+                        error(&e);
                         break;
                     }
                 }
@@ -137,7 +139,7 @@ impl DaemonReceiver {
             Err(e) => {
                 let e = Error::wrap(e, ErrorKind::Exec)
                     .with_msg("daemon: Failed to create scroll sender");
-                error!(?e);
+                error(&e);
                 return;
             }
         };
@@ -154,7 +156,7 @@ impl DaemonReceiver {
             if let Err(e) = DaemonReceiver::handle_scroll(&mut sender, event) {
                 let e = Error::wrap(e, ErrorKind::Exec)
                     .with_msg("daemon: Failed to send scroll event");
-                error!(?e);
+                error(&e);
             }
         }
     }
