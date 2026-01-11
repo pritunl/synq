@@ -129,3 +129,26 @@ pub fn list_devices() -> Result<Vec<Device>> {
 
     Ok(devices)
 }
+
+pub fn resolve_devices(config_values: &[String]) -> Result<Vec<String>> {
+    let devices = list_devices()?;
+    let mut resolved = Vec::new();
+
+    for value in config_values {
+        let is_path = value.starts_with('/');
+
+        let matched = devices.iter().find(|d| {
+            if is_path {
+                d.path == *value
+            } else {
+                d.name.eq_ignore_ascii_case(value)
+            }
+        });
+
+        if let Some(device) = matched {
+            resolved.push(device.path.clone());
+        }
+    }
+
+    Ok(resolved)
+}
