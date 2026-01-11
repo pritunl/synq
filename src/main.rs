@@ -18,6 +18,9 @@ struct Args {
     #[arg(long)]
     daemon: bool,
 
+    #[arg(long)]
+    debug: bool,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -35,6 +38,10 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
+
+    if args.debug {
+        errors::set_debug_output(true);
+    }
 
     if let Some(command) = args.command {
         match command {
