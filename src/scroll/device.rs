@@ -140,11 +140,12 @@ pub fn resolve_devices(config_values: &[String]) -> Result<Vec<String>> {
         let matched: Vec<_> = devices
             .iter()
             .filter(|d| {
-                if is_path {
-                    d.path == *value
-                } else {
-                    d.name.eq_ignore_ascii_case(value)
-                }
+                d.has_scroll
+                    && if is_path {
+                        d.path == *value
+                    } else {
+                        d.name.eq_ignore_ascii_case(value)
+                    }
             })
             .collect();
 
