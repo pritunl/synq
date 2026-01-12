@@ -242,6 +242,91 @@ impl DaemonSender {
         Ok(())
     }
 
+    async fn run_scroll_sender(
+        address: String,
+        mut rx: mpsc::Receiver<ScrollEvent>,
+        cancel: CancellationToken,
+    ) {
+        loop {
+            let mut client = tokio::select! {
+                _ = cancel.cancelled() => return,
+                result = DaemonSender::connect(&address) => {
+                    match result {
+                        Ok(client) => client,
+                        Err(e) => {
+                            let e = Error::wrap(e, ErrorKind::Network)
+                                .with_msg("daemon: Failed to connect to peer")
+                                .with_ctx("address", &address);
+                            error(&e);
+                            sleep(Duration::from_secs(1)).await;
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            let (stream_tx, stream_rx) = mpsc::channel(32);
+            let out_stream = ReceiverStream::new(stream_rx);
+
+            let response = tokio::select! {
+                _ = cancel.cancelled() => return,
+                result = client.scroll(out_stream) => {
+                    match result {
+                        Ok(response) => response,
+                        Err(e) => {
+                            let e = Error::wrap(e, ErrorKind::Network)
+                                .with_msg("daemon: Failed to start scroll stream")
+                                .with_ctx("address", &address);
+                            error(&e);
+                            sleep(Duration::from_secs(1)).await;
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            let response_cancel = cancel.clone();
+            let response_address = address.clone();
+            tokio::spawn(async move {
+                let mut in_stream = response.into_inner();
+                loop {
+                    tokio::select! {
+                        _ = response_cancel.cancelled() => break,
+                        result = in_stream.next() => {
+                            match result {
+                                Some(Ok(_)) => {}
+                                Some(Err(e)) => {
+                                    let e = Error::wrap(e, ErrorKind::Network)
+                                        .with_msg("daemon: Scroll stream error")
+                                        .with_ctx("address", &response_address);
+                                    error(&e);
+                                    break;
+                                }
+                                None => break,
+                            }
+                        }
+                    }
+                }
+            });
+
+            loop {
+                let event = tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    result = rx.recv() => {
+                        match result {
+                            Some(event) => event,
+                            None => return,
+                        }
+                    }
+                };
+
+                if stream_tx.send(event).await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+
     async fn run_scroll(config: Config, cancel: CancellationToken) -> Result<()> {
         info!("Starting scroll source");
 
