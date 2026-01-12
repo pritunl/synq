@@ -225,7 +225,7 @@ impl DaemonSender {
                         delta_y = event.delta_y,
                         "Scroll event",
                     );
-                    if tx.blocking_send(event).is_err() {
+                    if let Err(mpsc::error::TrySendError::Closed(_)) = tx.try_send(event) {
                         break;
                     }
                 }
