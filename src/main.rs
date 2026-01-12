@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     if args.daemon {
         let config = Config::load("/home/cloud/.config/synq.conf").await?;
         if config.is_modified() {
-            config.save("/home/cloud/.config/synq.conf").await?;
+            config.save().await?;
         }
 
         daemon::run(config).await?
