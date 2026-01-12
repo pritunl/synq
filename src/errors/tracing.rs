@@ -1,7 +1,7 @@
 use super::{Error, ErrorKind};
 use std::sync::LazyLock;
-use tokio::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use std::sync::RwLock;
+use std::time::{Duration, Instant};
 use std::collections::HashMap;
 
 pub use tracing::{trace, debug, info, warn};
@@ -10,7 +10,7 @@ const RATE_LIMIT_MAX_ERRORS: usize = 5;
 const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
 static ERROR_RATE_LIMITER: LazyLock<RwLock<HashMap<ErrorKind, RateLimitState>>> =
-    LazyLock::new(|| RwLock::const_new(HashMap::new()));
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 #[derive(Clone)]
 struct RateLimitState {
@@ -49,7 +49,7 @@ pub fn error(e: &Error) {
     let kind = e.kind().clone();
 
     let should_log = {
-        let mut limiter = ERROR_RATE_LIMITER.blocking_write();
+        let mut limiter = ERROR_RATE_LIMITER.write().unwrap();
         let state = limiter.entry(kind).or_insert_with(RateLimitState::new);
         state.should_log()
     };
