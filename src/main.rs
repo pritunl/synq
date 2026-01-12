@@ -28,6 +28,7 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum Command {
     ListDevices,
+    DetectDevices,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -53,6 +54,14 @@ async fn main() -> Result<()> {
                     }
                     println!("{}", device);
                 }
+            }
+            Command::DetectDevices => {
+                let config = Config::load("/home/cloud/.config/synq.conf").await?;
+                if config.is_modified() {
+                    config.save().await?;
+                }
+
+                scroll::detect_scroll_devices(config).await?;
             }
         }
         return Ok(());
