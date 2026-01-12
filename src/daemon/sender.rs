@@ -389,20 +389,20 @@ impl DaemonSender {
                 "Sending scroll event"
             );
 
-            for peer in &config.peers {
-                if peer.scroll_destination {
-                    if let Err(e) = DaemonSender::send_scroll(
-                        &peer.address,
-                        event.source,
-                        delta_x,
-                        delta_y,
-                    ).await {
-                        let e = Error::wrap(e, ErrorKind::Network)
-                            .with_msg("daemon: Failed to send scroll to peer")
-                            .with_ctx("address", &peer.address);
-                        error(&e);
-                    }
-                }
+            let proto_source = match event.source {
+                ScrollSource::Wheel => ProtoScrollSource::Wheel,
+                ScrollSource::Finger => ProtoScrollSource::Finger,
+                ScrollSource::Continuous => ProtoScrollSource::Continuous,
+            };
+
+            let scroll_event = ScrollEvent {
+                source: proto_source.into(),
+                delta_x,
+                delta_y,
+            };
+
+            for peer_tx in &peer_senders {
+                let _ = peer_tx.try_send(scroll_event.clone());
             }
         }
 
