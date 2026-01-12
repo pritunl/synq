@@ -1,13 +1,15 @@
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::OpenOptionsExt;
-use std::os::unix::io::OwnedFd;
+use std::os::unix::io::{AsRawFd, OwnedFd};
 use std::path::Path;
 
+use input::event::pointer::PointerEvent;
 use input::event::EventTrait;
-use input::{DeviceCapability, Libinput, LibinputInterface, ScrollMethod};
+use input::{DeviceCapability, Event, Libinput, LibinputInterface, ScrollMethod};
 use libc::{O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY};
 
+use crate::config::Config;
 use crate::errors::{Error, ErrorKind, Result};
 
 struct Interface;
@@ -155,4 +157,79 @@ pub fn resolve_devices(config_values: &[String]) -> Result<Vec<String>> {
     }
 
     Ok(resolved)
+}
+
+pub async fn detect_scroll_devices(mut config: Config) -> Result<()> {
+    println!("Listening for scroll events... Press Ctrl+C to stop.");
+    println!();
+
+    let mut libinput = Libinput::new_with_udev(Interface);
+    libinput.udev_assign_seat("seat0").map_err(|_| {
+        Error::new(ErrorKind::Read).with_msg("device: Failed to assign udev seat")
+    })?;
+
+    let fd = libinput.as_raw_fd();
+    let mut detected_devices: Vec<String> = Vec::new();
+
+    loop {
+        let mut pfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+
+        let ret = unsafe { libc::poll(&mut pfd, 1, 100) };
+        if ret < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(Error::wrap(err, ErrorKind::Read)
+                .with_msg("device: Poll failed"));
+        }
+
+        if ret == 0 {
+            continue;
+        }
+
+        libinput.dispatch().map_err(|e| {
+            Error::wrap(e, ErrorKind::Read).with_msg("device: Failed to dispatch libinput")
+        })?;
+
+        for event in &mut libinput {
+            if let Event::Pointer(pointer_event) = event {
+                let is_scroll = matches!(
+                    pointer_event,
+                    PointerEvent::ScrollWheel(_)
+                        | PointerEvent::ScrollFinger(_)
+                        | PointerEvent::ScrollContinuous(_)
+                );
+
+                if is_scroll {
+                    let device = match &pointer_event {
+                        PointerEvent::ScrollWheel(e) => e.device(),
+                        PointerEvent::ScrollFinger(e) => e.device(),
+                        PointerEvent::ScrollContinuous(e) => e.device(),
+                        _ => continue,
+                    };
+
+                    let device_name = device.name().to_string();
+
+                    if detected_devices.contains(&device_name) {
+                        continue;
+                    }
+
+                    detected_devices.push(device_name.clone());
+
+                    println!("Detected scroll from: {}", device_name);
+
+                    config.server.scroll_input_devices = detected_devices.clone();
+                    config.save().await?;
+
+                    println!("Saved {} device(s) to config", detected_devices.len());
+                    println!();
+                }
+            }
+        }
+    }
 }
