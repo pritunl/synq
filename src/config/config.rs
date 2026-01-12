@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::fs;
 use serde_saphyr::{from_str, to_string};
 
@@ -8,6 +8,8 @@ use crate::crypto::{generate_keypair, secret_key_to_public_key};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(skip)]
+    path: PathBuf,
     #[serde(skip)]
     modified: bool,
     pub server: ServerConfig,
@@ -70,15 +72,14 @@ impl Config {
                 .with_ctx("path", path.display().to_string())
             )?;
 
+        config.path = path.to_path_buf();
         config.normalize()?;
         config.validate()?;
 
         Ok(config)
     }
 
-    pub async fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let path = path.as_ref();
-
+    pub async fn save(&self) -> Result<()> {
         self.validate()?;
 
         let contents = to_string(self)
@@ -86,11 +87,11 @@ impl Config {
                 .with_msg("config: Failed to serialize")
             )?;
 
-        fs::write(path, &contents)
+        fs::write(&self.path, &contents)
             .await
             .map_err(|e| Error::wrap(e, ErrorKind::Write)
                 .with_msg("config: Failed to write file")
-                .with_ctx("path", path.display().to_string())
+                .with_ctx("path", self.path.display().to_string())
             )?;
 
         Ok(())
