@@ -330,7 +330,7 @@ impl DaemonSender {
     async fn run_scroll(config: Config, cancel: CancellationToken) -> Result<()> {
         info!("Starting scroll source");
 
-        let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<scroll::ScrollEvent>(32);
 
         let device_paths = scroll::resolve_devices(&config.server.scroll_input_devices)?;
         for device_path in device_paths {
@@ -349,6 +349,22 @@ impl DaemonSender {
             });
         }
 
+        let scroll_reverse = config.server.scroll_reverse;
+
+        let mut peer_senders: Vec<mpsc::Sender<ScrollEvent>> = Vec::new();
+        for peer in &config.peers {
+            if peer.scroll_destination {
+                let (peer_tx, peer_rx) = mpsc::channel(32);
+                peer_senders.push(peer_tx);
+
+                let address = peer.address.clone();
+                let sender_cancel = cancel.clone();
+                tokio::spawn(async move {
+                    DaemonSender::run_scroll_sender(address, peer_rx, sender_cancel).await;
+                });
+            }
+        }
+
         loop {
             let event = tokio::select! {
                 _ = cancel.cancelled() => break,
@@ -360,7 +376,7 @@ impl DaemonSender {
                 }
             };
 
-            let (delta_x, delta_y) = if config.server.scroll_reverse {
+            let (delta_x, delta_y) = if scroll_reverse {
                 (-event.delta_x, -event.delta_y)
             } else {
                 (event.delta_x, event.delta_y)
