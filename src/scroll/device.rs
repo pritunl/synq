@@ -139,17 +139,24 @@ pub fn resolve_devices(config_values: &[String]) -> Result<Vec<String>> {
     for value in config_values {
         let is_path = value.starts_with('/');
 
+        let matches_value = |d: &Device| {
+            if is_path {
+                d.path == *value
+            } else {
+                d.name.eq_ignore_ascii_case(value)
+            }
+        };
+
         let matched: Vec<_> = devices
             .iter()
-            .filter(|d| {
-                d.has_scroll
-                    && if is_path {
-                        d.path == *value
-                    } else {
-                        d.name.eq_ignore_ascii_case(value)
-                    }
-            })
+            .filter(|d| d.has_scroll && matches_value(d))
             .collect();
+
+        let matched = if matched.is_empty() {
+            devices.iter().filter(|d| matches_value(d)).collect()
+        } else {
+            matched
+        };
 
         for device in matched {
             resolved.push(device.path.clone());
