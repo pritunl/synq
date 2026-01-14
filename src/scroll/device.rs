@@ -235,6 +235,7 @@ pub async fn detect_scroll_devices(mut config: Config) -> Result<()> {
                     detected_devices.push(InputDevice {
                         name: Some(device_name),
                         path: None,
+                        scroll_reverse: true,
                     });
 
                     config.server.scroll_input_devices = detected_devices.clone();
