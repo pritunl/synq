@@ -6,6 +6,7 @@ mod crypto;
 mod scroll;
 mod clipboard;
 mod synq;
+mod transport;
 
 use clap::{Parser, Subcommand};
 use crate::errors::Result;
