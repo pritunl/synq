@@ -9,7 +9,6 @@ use tonic::{
     Status,
     Streaming,
 };
-use futures::stream;
 
 use crate::errors::{error, warn, trace};
 use crate::errors::{Result, Error, ErrorKind};
@@ -20,7 +19,7 @@ use crate::clipboard;
 use crate::utils;
 use crate::synq::{
     synq_service_server::{SynqService, SynqServiceServer},
-    ScrollEvent, ClipboardEvent,
+    ScrollEvent, ClipboardEvent, Empty,
 };
 
 pub struct TransportServer {
@@ -32,13 +31,10 @@ pub struct TransportServer {
 
 #[tonic::async_trait]
 impl SynqService for TransportServer {
-    type ScrollStream = stream::Empty<std::result::Result<ScrollEvent, Status>>;
-    type ClipboardStream = stream::Empty<std::result::Result<ClipboardEvent, Status>>;
-
     async fn scroll(
         &self,
         request: Request<Streaming<ScrollEvent>>,
-    ) -> std::result::Result<Response<Self::ScrollStream>, Status> {
+    ) -> std::result::Result<Response<Empty>, Status> {
         if !self.config.server.scroll_destination {
             return Err(Status::permission_denied("scroll destination not enabled"));
         }
@@ -51,44 +47,41 @@ impl SynqService for TransportServer {
         trace!("Scroll connection established");
 
         let mut in_stream = request.into_inner();
-        tokio::spawn(async move {
-            while let Some(result) = in_stream.next().await {
-                match result {
-                    Ok(evt) => {
-                        trace!(
-                            delta_x = evt.delta_x,
-                            delta_y = evt.delta_y,
-                            "Received scroll event",
-                        );
+        while let Some(result) = in_stream.next().await {
+            match result {
+                Ok(evt) => {
+                    trace!(
+                        delta_x = evt.delta_x,
+                        delta_y = evt.delta_y,
+                        "Received scroll event",
+                    );
 
-                        if let Err(std::sync::mpsc::TrySendError::Disconnected(_)) =
-                            scroll_tx.try_send(evt)
-                        {
-
-                            let e = Error::new(ErrorKind::Network)
-                                .with_msg("transport: Scroll inject channel closed");
-                            error(&e);
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        let e = Error::wrap(e, ErrorKind::Network)
-                            .with_msg("transport: Failed to read scroll event");
+                    if let Err(std::sync::mpsc::TrySendError::Disconnected(_)) =
+                        scroll_tx.try_send(evt)
+                    {
+                        let e = Error::new(ErrorKind::Network)
+                            .with_msg("transport: Scroll inject channel closed");
                         error(&e);
                         break;
                     }
                 }
+                Err(e) => {
+                    let e = Error::wrap(e, ErrorKind::Network)
+                        .with_msg("transport: Failed to read scroll event");
+                    error(&e);
+                    break;
+                }
             }
-            trace!("Scroll connection closed");
-        });
+        }
+        trace!("Scroll connection closed");
 
-        Ok(Response::new(stream::empty()))
+        Ok(Response::new(Empty {}))
     }
 
     async fn clipboard(
         &self,
         request: Request<Streaming<ClipboardEvent>>,
-    ) -> std::result::Result<Response<Self::ClipboardStream>, Status> {
+    ) -> std::result::Result<Response<Empty>, Status> {
         if !self.config.server.clipboard_destination {
             return Err(Status::permission_denied("clipboard destination not enabled"));
         }
@@ -100,28 +93,26 @@ impl SynqService for TransportServer {
         let last_set_clipboard = self.last_set_clipboard.clone();
         let mut in_stream = request.into_inner();
 
-        tokio::spawn(async move {
-            while let Some(result) = in_stream.next().await {
-                match result {
-                    Ok(event) => {
-                        if let Err(e) = handle_clipboard_event(
-                            &config, &key_store, &last_set_clipboard, event,
-                        ).await {
-                            error(&e);
-                        }
-                    }
-                    Err(e) => {
-                        let e = Error::wrap(e, ErrorKind::Network)
-                            .with_msg("transport: Failed to read clipboard event");
+        while let Some(result) = in_stream.next().await {
+            match result {
+                Ok(event) => {
+                    if let Err(e) = handle_clipboard_event(
+                        &config, &key_store, &last_set_clipboard, event,
+                    ).await {
                         error(&e);
-                        break;
                     }
                 }
+                Err(e) => {
+                    let e = Error::wrap(e, ErrorKind::Network)
+                        .with_msg("transport: Failed to read clipboard event");
+                    error(&e);
+                    break;
+                }
             }
-            trace!("Clipboard connection closed");
-        });
+        }
+        trace!("Clipboard connection closed");
 
-        Ok(Response::new(stream::empty()))
+        Ok(Response::new(Empty {}))
     }
 }
 
