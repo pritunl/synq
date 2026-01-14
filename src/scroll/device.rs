@@ -132,7 +132,12 @@ pub fn list_devices() -> Result<Vec<Device>> {
     Ok(devices)
 }
 
-pub fn resolve_devices(input_devices: &[InputDevice]) -> Result<Vec<String>> {
+pub struct ResolvedDevice {
+    pub path: String,
+    pub scroll_reverse: bool,
+}
+
+pub fn resolve_devices(input_devices: &[InputDevice]) -> Result<Vec<ResolvedDevice>> {
     let devices = list_devices()?;
     let mut resolved = Vec::new();
 
@@ -155,7 +160,10 @@ pub fn resolve_devices(input_devices: &[InputDevice]) -> Result<Vec<String>> {
         };
 
         for device in matched {
-            resolved.push(device.path.clone());
+            resolved.push(ResolvedDevice {
+                path: device.path.clone(),
+                scroll_reverse: input.scroll_reverse,
+            });
         }
     }
 
