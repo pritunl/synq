@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 
 use crate::errors::{error, trace};
@@ -75,24 +74,11 @@ async fn send_clipboard(
 
     let out_stream = ReceiverStream::new(rx);
 
-    match client.clipboard(out_stream).await {
-        Ok(response) => {
-            let mut in_stream = response.into_inner();
-            while let Some(result) = in_stream.next().await {
-                if let Err(e) = result {
-                    let e = Error::wrap(e, ErrorKind::Network)
-                        .with_msg("transport: Clipboard stream error");
-                    error(&e);
-                    break;
-                }
-            }
-        }
-        Err(e) => {
-            let e = Error::wrap(e, ErrorKind::Network)
-                .with_msg("transport: Failed to send clipboard")
-                .with_ctx("address", peer_address);
-            error(&e);
-        }
+    if let Err(e) = client.clipboard(out_stream).await {
+        let e = Error::wrap(e, ErrorKind::Network)
+            .with_msg("transport: Failed to send clipboard")
+            .with_ctx("address", peer_address);
+        error(&e);
     }
 
     trace!("Clipboard sent to {}", peer_address);
