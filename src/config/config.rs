@@ -31,8 +31,6 @@ pub struct ServerConfig {
     pub scroll_source: bool,
     #[serde(default)]
     pub scroll_destination: bool,
-    #[serde(default = "default_scroll_reverse")]
-    pub scroll_reverse: bool,
     #[serde(default)]
     pub scroll_input_devices: Vec<InputDevice>,
 }
@@ -51,12 +49,24 @@ pub struct PeerConfig {
     pub scroll_destination: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputDevice {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    #[serde(default = "default_scroll_reverse")]
+    pub scroll_reverse: bool,
+}
+
+impl Default for InputDevice {
+    fn default() -> Self {
+        Self {
+            name: None,
+            path: None,
+            scroll_reverse: default_scroll_reverse(),
+        }
+    }
 }
 
 const fn default_scroll_reverse() -> bool {
