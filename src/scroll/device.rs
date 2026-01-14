@@ -9,7 +9,7 @@ use input::event::EventTrait;
 use input::{DeviceCapability, Event, Libinput, LibinputInterface, ScrollMethod};
 use libc::{O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY};
 
-use crate::config::Config;
+use crate::config::{Config, InputDevice};
 use crate::errors::{Error, ErrorKind, Result};
 
 struct Interface;
@@ -132,28 +132,24 @@ pub fn list_devices() -> Result<Vec<Device>> {
     Ok(devices)
 }
 
-pub fn resolve_devices(config_values: &[String]) -> Result<Vec<String>> {
+pub fn resolve_devices(input_devices: &[InputDevice]) -> Result<Vec<String>> {
     let devices = list_devices()?;
     let mut resolved = Vec::new();
 
-    for value in config_values {
-        let is_path = value.starts_with('/');
-
-        let matches_value = |d: &Device| {
-            if is_path {
-                d.path == *value
-            } else {
-                d.name.eq_ignore_ascii_case(value)
-            }
+    for input in input_devices {
+        let matches_input = |d: &Device| {
+            let path_matches = input.path.as_ref().is_some_and(|p| d.path == *p);
+            let name_matches = input.name.as_ref().is_some_and(|n| d.name.eq_ignore_ascii_case(n));
+            path_matches || name_matches
         };
 
         let matched: Vec<_> = devices
             .iter()
-            .filter(|d| d.has_scroll && matches_value(d))
+            .filter(|d| d.has_scroll && matches_input(d))
             .collect();
 
         let matched = if matched.is_empty() {
-            devices.iter().filter(|d| matches_value(d)).collect()
+            devices.iter().filter(|d| matches_input(d)).collect()
         } else {
             matched
         };
@@ -176,7 +172,7 @@ pub async fn detect_scroll_devices(mut config: Config) -> Result<()> {
     })?;
 
     let fd = libinput.as_raw_fd();
-    let mut detected_devices: Vec<String> = Vec::new();
+    let mut detected_devices: Vec<InputDevice> = Vec::new();
 
     loop {
         let mut pfd = libc::pollfd {
@@ -222,13 +218,16 @@ pub async fn detect_scroll_devices(mut config: Config) -> Result<()> {
 
                     let device_name = device.name().to_string();
 
-                    if detected_devices.contains(&device_name) {
+                    if detected_devices.iter().any(|d| d.name.as_ref() == Some(&device_name)) {
                         continue;
                     }
 
-                    detected_devices.push(device_name.clone());
-
                     println!("Detected scroll from: {}", device_name);
+
+                    detected_devices.push(InputDevice {
+                        name: Some(device_name),
+                        path: None,
+                    });
 
                     config.server.scroll_input_devices = detected_devices.clone();
                     config.save().await?;
