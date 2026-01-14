@@ -209,14 +209,13 @@ pub async fn run(config: Config) -> Result<()> {
     let cancel = transport.cancel_token();
 
     if should_run_scroll_source {
-        let device_paths = scroll::resolve_devices(&config.server.scroll_input_devices)?;
-        let scroll_reverse = config.server.scroll_reverse;
+        let resolved_devices = scroll::resolve_devices(&config.server.scroll_input_devices)?;
 
-        for device_path in device_paths {
+        for device in resolved_devices {
             let transport = transport.clone();
             let device_cancel = cancel.clone();
             tokio::task::spawn_blocking(move || {
-                run_scroll_source(device_path, transport, scroll_reverse, device_cancel);
+                run_scroll_source(device.path, transport, device.scroll_reverse, device_cancel);
             });
         }
     }
@@ -228,12 +227,12 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     if config.server.scroll_destination {
-        let blocker_device_paths = scroll::resolve_devices(
+        let blocker_devices = scroll::resolve_devices(
             &config.server.scroll_input_devices)?;
-        for device_path in blocker_device_paths {
+        for device in blocker_devices {
             let blocker_cancel = cancel.clone();
             tokio::task::spawn_blocking(move || {
-                run_scroll_blocker(device_path, blocker_cancel);
+                run_scroll_blocker(device.path, blocker_cancel);
             });
         }
     }
