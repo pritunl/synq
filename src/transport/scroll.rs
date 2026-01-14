@@ -120,37 +120,39 @@ async fn run_peer_connection(
         let (stream_tx, stream_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let out_stream = ReceiverStream::new(stream_rx);
 
-        let response = tokio::select! {
-            _ = cancel.cancelled() => return,
-            result = client.scroll(out_stream) => {
-                match result {
-                    Ok(response) => response,
-                    Err(e) => {
-                        let e = Error::wrap(e, ErrorKind::Network)
-                            .with_msg("transport: Failed to start scroll stream")
-                            .with_ctx("address", &address);
-                        error(&e);
-                        state.store(STATE_DISCONNECTED, Ordering::Relaxed);
-                        sleep(Duration::from_millis(RECONNECT_DELAY_MS)).await;
-                        continue;
-                    }
-                }
+        let rpc_address = address.clone();
+        let rpc_state = state.clone();
+        let mut rpc_handle = tokio::spawn(async move {
+            let result = client.scroll(out_stream).await;
+            if let Err(e) = result {
+                let e = Error::wrap(e, ErrorKind::Network)
+                    .with_msg("transport: Scroll stream failed")
+                    .with_ctx("address", &rpc_address);
+                error(&e);
             }
-        };
+            rpc_state.store(STATE_DISCONNECTED, Ordering::Relaxed);
+        });
 
         state.store(STATE_CONNECTED, Ordering::Relaxed);
 
         info!("Scroll connection established to {}", address);
 
-        drop(response);
-
         loop {
             let event = tokio::select! {
-                _ = cancel.cancelled() => return,
+                _ = cancel.cancelled() => {
+                    rpc_handle.abort();
+                    return;
+                }
+                _ = &mut rpc_handle => {
+                    break;
+                }
                 result = rx.recv() => {
                     match result {
                         Some(event) => event,
-                        None => return,
+                        None => {
+                            rpc_handle.abort();
+                            return;
+                        }
                     }
                 }
             };
