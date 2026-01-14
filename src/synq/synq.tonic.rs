@@ -93,10 +93,7 @@ pub mod synq_service_client {
         pub async fn scroll(
             &mut self,
             request: impl tonic::IntoStreamingRequest<Message = super::ScrollEvent>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::ScrollEvent>>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -109,15 +106,12 @@ pub mod synq_service_client {
             let path = http::uri::PathAndQuery::from_static("/synq.SynqService/Scroll");
             let mut req = request.into_streaming_request();
             req.extensions_mut().insert(GrpcMethod::new("synq.SynqService", "Scroll"));
-            self.inner.streaming(req, path, codec).await
+            self.inner.client_streaming(req, path, codec).await
         }
         pub async fn clipboard(
             &mut self,
             request: impl tonic::IntoStreamingRequest<Message = super::ClipboardEvent>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::ClipboardEvent>>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -133,7 +127,7 @@ pub mod synq_service_client {
             let mut req = request.into_streaming_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("synq.SynqService", "Clipboard"));
-            self.inner.streaming(req, path, codec).await
+            self.inner.client_streaming(req, path, codec).await
         }
     }
 }
@@ -150,26 +144,14 @@ pub mod synq_service_server {
     /// Generated trait containing gRPC methods that should be implemented for use with SynqServiceServer.
     #[async_trait]
     pub trait SynqService: std::marker::Send + std::marker::Sync + 'static {
-        /// Server streaming response type for the Scroll method.
-        type ScrollStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::ScrollEvent, tonic::Status>,
-            >
-            + std::marker::Send
-            + 'static;
         async fn scroll(
             &self,
             request: tonic::Request<tonic::Streaming<super::ScrollEvent>>,
-        ) -> std::result::Result<tonic::Response<Self::ScrollStream>, tonic::Status>;
-        /// Server streaming response type for the Clipboard method.
-        type ClipboardStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::ClipboardEvent, tonic::Status>,
-            >
-            + std::marker::Send
-            + 'static;
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn clipboard(
             &self,
             request: tonic::Request<tonic::Streaming<super::ClipboardEvent>>,
-        ) -> std::result::Result<tonic::Response<Self::ClipboardStream>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct SynqServiceServer<T> {
@@ -252,12 +234,11 @@ pub mod synq_service_server {
                     struct ScrollSvc<T: SynqService>(pub Arc<T>);
                     impl<
                         T: SynqService,
-                    > tonic::server::StreamingService<super::ScrollEvent>
+                    > tonic::server::ClientStreamingService<super::ScrollEvent>
                     for ScrollSvc<T> {
-                        type Response = super::ScrollEvent;
-                        type ResponseStream = T::ScrollStream;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
+                            tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
@@ -288,7 +269,7 @@ pub mod synq_service_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let res = grpc.streaming(method, req).await;
+                        let res = grpc.client_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
@@ -298,12 +279,11 @@ pub mod synq_service_server {
                     struct ClipboardSvc<T: SynqService>(pub Arc<T>);
                     impl<
                         T: SynqService,
-                    > tonic::server::StreamingService<super::ClipboardEvent>
+                    > tonic::server::ClientStreamingService<super::ClipboardEvent>
                     for ClipboardSvc<T> {
-                        type Response = super::ClipboardEvent;
-                        type ResponseStream = T::ClipboardStream;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
+                            tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
@@ -336,7 +316,7 @@ pub mod synq_service_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let res = grpc.streaming(method, req).await;
+                        let res = grpc.client_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
