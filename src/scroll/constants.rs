@@ -42,8 +42,20 @@ pub(crate) const REL_HWHEEL_HI_RES: u16 = 0x0c;
 
 pub(crate) const SYN_REPORT: u16 = 0x00;
 
+pub(crate) const ABS_MT_SLOT: u16 = 0x2f;
+pub(crate) const ABS_MT_TRACKING_ID: u16 = 0x39;
+pub(crate) const ABS_MT_POSITION_X: u16 = 0x35;
+pub(crate) const ABS_MT_POSITION_Y: u16 = 0x36;
+
+pub(crate) const BTN_TOUCH: u16 = 0x14a;
+pub(crate) const BTN_TOOL_FINGER: u16 = 0x145;
+pub(crate) const BTN_TOOL_DOUBLETAP: u16 = 0x14d;
+
 pub(crate) const SCROLL_DEVICE_NAME: &[u8] = b"Virtual Scroll Device";
 pub(crate) const SCROLL_DEVICE_ID: [u16; 4] = [0x06, 0x628, 0x1, 0x1];
+
+pub(crate) const TOUCHPAD_DEVICE_NAME: &[u8] = b"Virtual Touchpad";
+pub(crate) const TOUCHPAD_DEVICE_ID: [u16; 4] = [0x03, 0x0001, 0x0001, 0x0001];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollSource {
