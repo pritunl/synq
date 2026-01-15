@@ -15,6 +15,7 @@ use crate::synq::{
     ScrollEvent,
 };
 use super::PeerState;
+use super::active::ActiveState;
 
 const CHANNEL_CAPACITY: usize = 32;
 const RECONNECT_DELAY_MS: u64 = 1000;
@@ -25,9 +26,15 @@ const STATE_CONNECTED: u8 = 2;
 
 pub struct ScrollTransport;
 
+struct PeerInfo {
+    public_key: String,
+    tx: mpsc::Sender<ScrollEvent>,
+}
+
 impl ScrollTransport {
     pub fn start(
         peers: &[PeerConfig],
+        active_state: ActiveState,
         cancel: CancellationToken,
     ) -> (mpsc::Sender<ScrollEvent>, Vec<(String, Arc<AtomicU8>)>) {
         let scroll_peers: Vec<_> = peers.iter()
@@ -41,8 +48,7 @@ impl ScrollTransport {
 
         let (main_tx, mut main_rx) = mpsc::channel::<ScrollEvent>(CHANNEL_CAPACITY);
 
-        let mut peer_txs: Vec<mpsc::Sender<ScrollEvent>> = Vec::with_capacity(
-            scroll_peers.len());
+        let mut peer_infos: Vec<PeerInfo> = Vec::with_capacity(scroll_peers.len());
         let mut peer_states = Vec::with_capacity(scroll_peers.len());
 
         for peer in scroll_peers {
@@ -58,7 +64,10 @@ impl ScrollTransport {
                 run_peer_connection(address, peer_rx, peer_state, peer_cancel).await;
             });
 
-            peer_txs.push(peer_tx);
+            peer_infos.push(PeerInfo {
+                public_key: peer.public_key.clone(),
+                tx: peer_tx,
+            });
         }
 
         let fanout_cancel = cancel.clone();
@@ -74,8 +83,14 @@ impl ScrollTransport {
                     }
                 };
 
-                for tx in &peer_txs {
-                    let _ = tx.try_send(event.clone());
+                let Some(active_peer) = active_state.get_active_peer() else {
+                    continue;
+                };
+
+                for peer_info in &peer_infos {
+                    if peer_info.public_key == active_peer {
+                        let _ = peer_info.tx.try_send(event);
+                    }
                 }
             }
         });
