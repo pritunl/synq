@@ -13,6 +13,7 @@ use crate::synq::ScrollEvent;
 use super::server::TransportServer;
 use super::scroll::ScrollTransport;
 use super::clipboard::{ClipboardTransport, ClipboardSendEvent};
+use super::active::{ActiveState, ActiveTransport, ActiveRequestEvent};
 
 const SCROLL_INJECT_CAPACITY: usize = 32;
 
@@ -43,6 +44,8 @@ impl TransportStatus {
 pub struct Transport {
     scroll_tx: mpsc::Sender<ScrollEvent>,
     clipboard_tx: mpsc::Sender<ClipboardSendEvent>,
+    active_tx: mpsc::Sender<ActiveRequestEvent>,
+    active_state: ActiveState,
     #[allow(dead_code)]
     status: Arc<TransportStatus>,
     last_set_clipboard: Arc<AtomicU64>,
@@ -75,14 +78,18 @@ impl Transport {
             (None, None)
         };
 
+        let active_state = ActiveState::new();
+
         let should_run_server = config.server.clipboard_destination
-            || config.server.scroll_destination;
+            || config.server.scroll_destination
+            || config.server.scroll_source;
         if should_run_server {
             let server = TransportServer::new(
                 config.clone(),
                 key_store.clone(),
                 last_set_clipboard.clone(),
                 scroll_inject_tx,
+                active_state.clone(),
             );
             let server_status = status.clone();
             tokio::spawn(async move {
@@ -96,7 +103,11 @@ impl Transport {
             });
         }
 
-        let (scroll_tx, peer_states) = ScrollTransport::start(&config.peers, cancel.clone());
+        let (scroll_tx, peer_states) = ScrollTransport::start(
+            &config.peers,
+            active_state.clone(),
+            cancel.clone(),
+        );
         {
             let mut peers = status.peers.write().await;
             *peers = peer_states;
@@ -107,12 +118,21 @@ impl Transport {
             config.server.public_key.clone(),
         );
 
+        let active_tx = ActiveTransport::start(
+            &config.peers,
+            config.server.public_key.clone(),
+            active_state.clone(),
+            cancel.clone(),
+        );
+
         info!("Transport initialized");
 
         Ok((
             Self {
                 scroll_tx,
                 clipboard_tx,
+                active_tx,
+                active_state,
                 status,
                 last_set_clipboard,
                 cancel,
@@ -152,6 +172,14 @@ impl Transport {
 
     pub fn last_set_clipboard(&self) -> &AtomicU64 {
         &self.last_set_clipboard
+    }
+
+    pub fn send_active_request(&self) -> bool {
+        self.active_tx.try_send(ActiveRequestEvent).is_ok()
+    }
+
+    pub fn active_state(&self) -> &ActiveState {
+        &self.active_state
     }
 
     pub fn shutdown(&self) {
