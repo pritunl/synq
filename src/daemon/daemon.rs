@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::crypto::KeyStore;
 use crate::clipboard;
 use crate::scroll::{self, ScrollReceiver, ScrollBlocker, ScrollSender, ScrollSource};
-use crate::transport::{Transport, ScrollInjectRx};
+use crate::transport::{Transport, ScrollInjectRx, ActiveState};
 use crate::utils;
 use crate::synq::{ScrollEvent, ScrollSource as ProtoScrollSource};
 
@@ -99,11 +99,21 @@ fn run_scroll_inject(rx: ScrollInjectRx) {
 
 fn run_scroll_blocker(
     device_path: String,
+    active_state: ActiveState,
+    host_public_key: String,
+    transport: Transport,
     cancel: CancellationToken,
 ) {
-    let last_scroll = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let on_scroll: Box<dyn Fn() + Send> = Box::new(move || {
+        transport.send_active_request();
+    });
 
-    let mut blocker = match ScrollBlocker::new(&device_path, last_scroll) {
+    let mut blocker = match ScrollBlocker::new(
+        &device_path,
+        active_state,
+        host_public_key,
+        Some(on_scroll),
+    ) {
         Ok(b) => b,
         Err(e) => {
             let e = Error::wrap(e, ErrorKind::Exec)
@@ -231,8 +241,17 @@ pub async fn run(config: Config) -> Result<()> {
             &config.server.scroll_input_devices)?;
         for device in blocker_devices {
             let blocker_cancel = cancel.clone();
+            let blocker_active_state = transport.active_state().clone();
+            let blocker_public_key = config.server.public_key.clone();
+            let blocker_transport = transport.clone();
             tokio::task::spawn_blocking(move || {
-                run_scroll_blocker(device.path, blocker_cancel);
+                run_scroll_blocker(
+                    device.path,
+                    blocker_active_state,
+                    blocker_public_key,
+                    blocker_transport,
+                    blocker_cancel,
+                );
             });
         }
     }
