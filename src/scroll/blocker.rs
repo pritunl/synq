@@ -3,14 +3,13 @@ use std::io::{Read, Write};
 use std::mem;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 use crate::errors::trace;
+use crate::errors::info;
 
 use crate::errors::{Error, ErrorKind, Result};
-use crate::utils;
+use crate::transport::ActiveState;
 use super::constants::{
     EVIOCGRAB,
     EV_REL,
@@ -25,11 +24,18 @@ use super::utils::setup_uinput_clone;
 pub struct ScrollBlocker {
     device: File,
     uinput: File,
-    last_scroll: Arc<AtomicU64>,
+    active_state: ActiveState,
+    host_public_key: String,
+    on_scroll: Option<Box<dyn Fn() + Send>>,
 }
 
 impl ScrollBlocker {
-    pub fn new(device_path: impl AsRef<Path>, last_scroll: Arc<AtomicU64>) -> Result<Self> {
+    pub fn new(
+        device_path: impl AsRef<Path>,
+        active_state: ActiveState,
+        host_public_key: String,
+        on_scroll: Option<Box<dyn Fn() + Send>>,
+    ) -> Result<Self> {
         let path = device_path.as_ref();
 
         let device = OpenOptions::new()
@@ -54,7 +60,9 @@ impl ScrollBlocker {
         Ok(Self {
             device,
             uinput,
-            last_scroll,
+            active_state,
+            host_public_key,
+            on_scroll,
         })
     }
 
@@ -70,6 +78,10 @@ impl ScrollBlocker {
             mem::transmute(buf)
         };
 
+        let inactive = self.active_state.get_active_peer()
+            .map(|p| p != self.host_public_key)
+            .unwrap_or(true);
+
         let is_scroll = event.type_ == EV_REL as u16
             && (event.code == REL_WHEEL
                 || event.code == REL_HWHEEL
@@ -77,7 +89,6 @@ impl ScrollBlocker {
                 || event.code == REL_HWHEEL_HI_RES);
 
         if is_scroll {
-            self.last_scroll.store(utils::mono_time_ms(), Ordering::SeqCst);
             trace!(code = event.code, value = event.value, "Blocked scroll event");
         } else {
             let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe {
@@ -88,6 +99,13 @@ impl ScrollBlocker {
                 Error::wrap(e, ErrorKind::Write)
                     .with_msg("scroll: Failed to write event to uinput")
             })?;
+        }
+
+        if inactive {
+            info!("Not active, sending active request");
+            if let Some(ref on_scroll) = self.on_scroll {
+                on_scroll();
+            }
         }
 
         Ok(())
