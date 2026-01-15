@@ -17,12 +17,7 @@ pub struct ClipboardEvent {
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ActiveRequest {
-    #[prost(string, tag = "1")]
-    pub peer: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ActiveState {
+pub struct ActiveEvent {
     #[prost(string, tag = "1")]
     pub peer: ::prost::alloc::string::String,
     #[prost(uint64, tag = "2")]
