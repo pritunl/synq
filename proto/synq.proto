@@ -5,6 +5,8 @@ package synq;
 service SynqService {
   rpc Scroll(stream ScrollEvent) returns (Empty);
   rpc Clipboard(stream ClipboardEvent) returns (Empty);
+  rpc RequestActive(ActiveRequest) returns (ActiveState);
+  rpc NotifyActive(ActiveState) returns (Empty);
 }
 
 enum ScrollSource {
@@ -22,6 +24,15 @@ message ScrollEvent {
 message ClipboardEvent {
   string client = 1;
   bytes data = 2;
+}
+
+message ActiveRequest {
+  string peer = 1;
+}
+
+message ActiveState {
+  string peer = 1;
+  uint64 clock = 2;
 }
 
 message Empty {}
