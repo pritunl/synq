@@ -19,14 +19,17 @@ use crate::clipboard;
 use crate::utils;
 use crate::synq::{
     synq_service_server::{SynqService, SynqServiceServer},
-    ScrollEvent, ClipboardEvent, Empty,
+    ScrollEvent, ClipboardEvent, ActiveEvent, Empty,
 };
+
+use super::active::{ActiveState, send_active_state};
 
 pub struct TransportServer {
     config: Config,
     key_store: Arc<KeyStore>,
     last_set_clipboard: Arc<AtomicU64>,
     scroll_inject_tx: Option<std::sync::mpsc::SyncSender<ScrollEvent>>,
+    active_state: ActiveState,
 }
 
 #[tonic::async_trait]
@@ -114,6 +117,87 @@ impl SynqService for TransportServer {
 
         Ok(Response::new(Empty {}))
     }
+
+    async fn active_request(
+        &self,
+        request: Request<ActiveEvent>,
+    ) -> std::result::Result<Response<ActiveEvent>, Status> {
+        if !self.config.server.scroll_source {
+            return Err(Status::permission_denied("scroll source not enabled"));
+        }
+
+        let event = request.into_inner();
+
+        let peer = self.config.peers.iter()
+            .find(|p| p.public_key == event.peer);
+
+        let peer = match peer {
+            Some(p) => p,
+            None => {
+                warn!("Received active request from unknown peer: {}", event.peer);
+                return Err(Status::permission_denied("unknown peer"));
+            }
+        };
+
+        if !peer.scroll_destination {
+            warn!("Received active request from non-destination peer: {}", event.peer);
+            return Err(Status::permission_denied("peer is not a scroll destination"));
+        }
+
+        let new_clock = self.active_state.increment_and_set(event.peer.clone());
+
+        trace!(
+            peer = %event.peer,
+            clock = new_clock,
+            "Active peer updated via request",
+        );
+
+        for dest_peer in &self.config.peers {
+            if dest_peer.scroll_destination && dest_peer.public_key != event.peer {
+                let address = dest_peer.address.clone();
+                let peer_key = event.peer.clone();
+                let clock = new_clock;
+                tokio::spawn(async move {
+                    if let Err(e) = send_active_state(&address, &peer_key, clock).await {
+                        error(&e);
+                    }
+                });
+            }
+        }
+
+        Ok(Response::new(ActiveEvent {
+            peer: event.peer,
+            clock: new_clock,
+        }))
+    }
+
+    async fn active_state(
+        &self,
+        request: Request<ActiveEvent>,
+    ) -> std::result::Result<Response<Empty>, Status> {
+        let event = request.into_inner();
+
+        let current_clock = self.active_state.get_clock();
+        if event.clock <= current_clock {
+            trace!(
+                peer = %event.peer,
+                event_clock = event.clock,
+                current_clock = current_clock,
+                "Ignoring stale active state",
+            );
+            return Ok(Response::new(Empty {}));
+        }
+
+        self.active_state.set_active(event.peer.clone(), event.clock);
+
+        trace!(
+            peer = %event.peer,
+            clock = event.clock,
+            "Active state updated",
+        );
+
+        Ok(Response::new(Empty {}))
+    }
 }
 
 async fn handle_clipboard_event(
@@ -162,12 +246,14 @@ impl TransportServer {
         key_store: Arc<KeyStore>,
         last_set_clipboard: Arc<AtomicU64>,
         scroll_inject_tx: Option<std::sync::mpsc::SyncSender<ScrollEvent>>,
+        active_state: ActiveState,
     ) -> Self {
         Self {
             config,
             key_store,
             last_set_clipboard,
             scroll_inject_tx,
+            active_state,
         }
     }
 
