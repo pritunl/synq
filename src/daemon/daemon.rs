@@ -20,6 +20,7 @@ fn run_scroll_source(
     device_path: String,
     transport: Transport,
     scroll_reverse: bool,
+    scroll_modifier: f64,
     cancel: CancellationToken,
 ) {
     let mut receiver = match ScrollReceiver::new(&device_path) {
@@ -38,9 +39,9 @@ fn run_scroll_source(
         match receiver.read_event() {
             Ok(Some(event)) => {
                 let (delta_x, delta_y) = if scroll_reverse {
-                    (-event.delta_x, -event.delta_y)
+                    (-event.delta_x * scroll_modifier, -event.delta_y * scroll_modifier)
                 } else {
-                    (event.delta_x, event.delta_y)
+                    (event.delta_x * scroll_modifier, event.delta_y * scroll_modifier)
                 };
 
                 trace!(
@@ -225,7 +226,13 @@ pub async fn run(config: Config) -> Result<()> {
             let transport = transport.clone();
             let device_cancel = cancel.clone();
             tokio::task::spawn_blocking(move || {
-                run_scroll_source(device.path, transport, device.scroll_reverse, device_cancel);
+                run_scroll_source(
+                    device.path,
+                    transport,
+                    device.scroll_reverse,
+                    device.scroll_modifier,
+                    device_cancel,
+                );
             });
         }
     }
