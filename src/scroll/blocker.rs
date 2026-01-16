@@ -6,7 +6,6 @@ use std::path::Path;
 
 use tokio_util::sync::CancellationToken;
 use crate::errors::trace;
-use crate::errors::info;
 
 use crate::errors::{Error, ErrorKind, Result};
 use crate::transport::ActiveState;
@@ -97,7 +96,7 @@ impl ScrollBlocker {
         }
 
         if inactive {
-            info!("Not active, sending active request");
+            trace!("Not active, sending active request");
             if let Some(ref on_scroll) = self.on_scroll {
                 on_scroll();
             }
