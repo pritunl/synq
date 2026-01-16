@@ -135,6 +135,7 @@ pub fn list_devices() -> Result<Vec<Device>> {
 pub struct ResolvedDevice {
     pub path: String,
     pub scroll_reverse: bool,
+    pub scroll_modifier: f64,
 }
 
 pub fn resolve_devices(input_devices: &[InputDevice]) -> Result<Vec<ResolvedDevice>> {
@@ -163,6 +164,7 @@ pub fn resolve_devices(input_devices: &[InputDevice]) -> Result<Vec<ResolvedDevi
             resolved.push(ResolvedDevice {
                 path: device.path.clone(),
                 scroll_reverse: input.scroll_reverse,
+                scroll_modifier: input.scroll_modifier,
             });
         }
     }
