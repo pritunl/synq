@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::RwLock;
 
 use tokio::sync::mpsc;
@@ -19,14 +19,22 @@ use crate::synq::{
 pub struct ActiveState {
     active_peer: Arc<RwLock<Option<String>>>,
     clock: Arc<AtomicU64>,
+    host_active: Arc<AtomicBool>,
+    host_public_key: Arc<String>,
 }
 
 impl ActiveState {
-    pub fn new() -> Self {
+    pub fn new(host_public_key: String) -> Self {
         Self {
             active_peer: Arc::new(RwLock::new(None)),
             clock: Arc::new(AtomicU64::new(0)),
+            host_active: Arc::new(AtomicBool::new(false)),
+            host_public_key: Arc::new(host_public_key),
         }
+    }
+
+    pub fn is_host_active(&self) -> bool {
+        self.host_active.load(Ordering::Acquire)
     }
 
     pub fn get_active_peer(&self) -> Option<String> {
@@ -38,13 +46,17 @@ impl ActiveState {
     }
 
     pub fn set_active(&self, peer: String, clock: u64) {
+        let is_host = peer == *self.host_public_key;
         *self.active_peer.write().unwrap() = Some(peer);
         self.clock.store(clock, Ordering::SeqCst);
+        self.host_active.store(is_host, Ordering::Release);
     }
 
     pub fn increment_and_set(&self, peer: String) -> u64 {
+        let is_host = peer == *self.host_public_key;
         let new_clock = self.clock.fetch_add(1, Ordering::SeqCst) + 1;
         *self.active_peer.write().unwrap() = Some(peer);
+        self.host_active.store(is_host, Ordering::Release);
         new_clock
     }
 
