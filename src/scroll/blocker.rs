@@ -25,7 +25,6 @@ pub struct ScrollBlocker {
     device: File,
     uinput: File,
     active_state: ActiveState,
-    host_public_key: String,
     on_scroll: Option<Box<dyn Fn() + Send>>,
 }
 
@@ -33,7 +32,6 @@ impl ScrollBlocker {
     pub fn new(
         device_path: impl AsRef<Path>,
         active_state: ActiveState,
-        host_public_key: String,
         on_scroll: Option<Box<dyn Fn() + Send>>,
     ) -> Result<Self> {
         let path = device_path.as_ref();
@@ -61,7 +59,6 @@ impl ScrollBlocker {
             device,
             uinput,
             active_state,
-            host_public_key,
             on_scroll,
         })
     }
@@ -78,9 +75,7 @@ impl ScrollBlocker {
             mem::transmute(buf)
         };
 
-        let inactive = self.active_state.get_active_peer()
-            .map(|p| p != self.host_public_key)
-            .unwrap_or(true);
+        let inactive = !self.active_state.is_host_active();
 
         let is_scroll = event.type_ == EV_REL as u16
             && (event.code == REL_WHEEL
