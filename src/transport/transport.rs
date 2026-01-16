@@ -78,7 +78,7 @@ impl Transport {
             (None, None)
         };
 
-        let active_state = ActiveState::new();
+        let active_state = ActiveState::new(config.server.public_key.clone());
 
         let should_run_server = config.server.clipboard_destination
             || config.server.scroll_destination
