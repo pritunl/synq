@@ -57,6 +57,8 @@ pub struct InputDevice {
     pub path: Option<String>,
     #[serde(default = "default_scroll_reverse")]
     pub scroll_reverse: bool,
+    #[serde(default = "default_scroll_modifier")]
+    pub scroll_modifier: f64,
 }
 
 impl Default for InputDevice {
@@ -65,12 +67,17 @@ impl Default for InputDevice {
             name: None,
             path: None,
             scroll_reverse: default_scroll_reverse(),
+            scroll_modifier: default_scroll_modifier(),
         }
     }
 }
 
 const fn default_scroll_reverse() -> bool {
     true
+}
+
+const fn default_scroll_modifier() -> f64 {
+    1.0
 }
 
 impl Config {
