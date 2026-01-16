@@ -6,7 +6,6 @@ pub use constants::*;
 mod device;
 pub use device::*;
 mod event;
-pub use event::*;
 mod blocker;
 pub use blocker::*;
 mod receiver;
