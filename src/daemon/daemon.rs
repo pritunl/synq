@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::crypto::KeyStore;
 use crate::clipboard;
 use crate::scroll::{self, ScrollReceiver, ScrollBlocker, ScrollSender, ScrollSource};
-use crate::transport::{Transport, ScrollInjectRx, ActiveState};
+use crate::transport::{Transport, ScrollInjectRx, ActiveState, send_active_state};
 use crate::utils;
 use crate::synq::{ScrollEvent, ScrollSource as ProtoScrollSource};
 
@@ -219,6 +219,23 @@ pub async fn run(config: Config) -> Result<()> {
 
     if should_run_scroll_source {
         let resolved_devices = scroll::resolve_devices(&config.server.scroll_input_devices)?;
+
+        let host_key = config.server.public_key.clone();
+        for peer in &config.peers {
+            if peer.scroll_destination {
+                let address = peer.address.clone();
+                let peer_key = host_key.clone();
+                tokio::spawn(async move {
+                    trace!(
+                        peer = %address,
+                        "Send state reset",
+                    );
+                    if let Err(e) = send_active_state(&address, &peer_key, 0).await {
+                        error(&e);
+                    }
+                });
+            }
+        }
 
         for device in resolved_devices {
             let transport = transport.clone();
