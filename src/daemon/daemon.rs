@@ -101,7 +101,6 @@ fn run_scroll_inject(rx: ScrollInjectRx) {
 fn run_scroll_blocker(
     device_path: String,
     active_state: ActiveState,
-    host_public_key: String,
     transport: Transport,
     cancel: CancellationToken,
 ) {
@@ -112,7 +111,6 @@ fn run_scroll_blocker(
     let mut blocker = match ScrollBlocker::new(
         &device_path,
         active_state,
-        host_public_key,
         Some(on_scroll),
     ) {
         Ok(b) => b,
@@ -249,13 +247,11 @@ pub async fn run(config: Config) -> Result<()> {
         for device in blocker_devices {
             let blocker_cancel = cancel.clone();
             let blocker_active_state = transport.active_state().clone();
-            let blocker_public_key = config.server.public_key.clone();
             let blocker_transport = transport.clone();
             tokio::task::spawn_blocking(move || {
                 run_scroll_blocker(
                     device.path,
                     blocker_active_state,
-                    blocker_public_key,
                     blocker_transport,
                     blocker_cancel,
                 );
