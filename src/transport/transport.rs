@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
 
-use crate::errors::{error, info};
+use crate::errors::{error, info, warn};
 use crate::errors::{Result, Error, ErrorKind};
 use crate::config::Config;
 use crate::crypto::KeyStore;
@@ -142,7 +142,11 @@ impl Transport {
     }
 
     pub fn send_scroll(&self, event: ScrollEvent) -> bool {
-        self.scroll_tx.try_send(event).is_ok()
+        if let Err(e) = self.scroll_tx.try_send(event) {
+            warn!("transport: Dropped scroll event: {}", e);
+            return false;
+        }
+        true
     }
 
     pub fn send_clipboard(
@@ -150,11 +154,15 @@ impl Transport {
         peer_public_key: String,
         text: String,
     ) -> bool {
-        self.clipboard_tx.try_send(ClipboardSendEvent {
+        if let Err(e) = self.clipboard_tx.try_send(ClipboardSendEvent {
             peer_address,
             peer_public_key,
             text,
-        }).is_ok()
+        }) {
+            warn!("transport: Dropped clipboard send event: {}", e);
+            return false;
+        }
+        true
     }
 
     #[allow(dead_code)]
@@ -175,7 +183,11 @@ impl Transport {
     }
 
     pub fn send_active_request(&self) -> bool {
-        self.active_tx.try_send(ActiveRequestEvent).is_ok()
+        if let Err(e) = self.active_tx.try_send(ActiveRequestEvent) {
+            warn!("transport: Dropped active request event: {}", e);
+            return false;
+        }
+        true
     }
 
     pub fn active_state(&self) -> &ActiveState {
