@@ -110,7 +110,7 @@ pub mod synq_service_client {
         }
         pub async fn clipboard(
             &mut self,
-            request: impl tonic::IntoStreamingRequest<Message = super::ClipboardEvent>,
+            request: impl tonic::IntoRequest<super::ClipboardEvent>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
@@ -124,10 +124,10 @@ pub mod synq_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/synq.SynqService/Clipboard",
             );
-            let mut req = request.into_streaming_request();
+            let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("synq.SynqService", "Clipboard"));
-            self.inner.client_streaming(req, path, codec).await
+            self.inner.unary(req, path, codec).await
         }
         pub async fn active_request(
             &mut self,
@@ -192,7 +192,7 @@ pub mod synq_service_server {
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn clipboard(
             &self,
-            request: tonic::Request<tonic::Streaming<super::ClipboardEvent>>,
+            request: tonic::Request<super::ClipboardEvent>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn active_request(
             &self,
@@ -329,7 +329,7 @@ pub mod synq_service_server {
                     struct ClipboardSvc<T: SynqService>(pub Arc<T>);
                     impl<
                         T: SynqService,
-                    > tonic::server::ClientStreamingService<super::ClipboardEvent>
+                    > tonic::server::UnaryService<super::ClipboardEvent>
                     for ClipboardSvc<T> {
                         type Response = super::Empty;
                         type Future = BoxFuture<
@@ -338,9 +338,7 @@ pub mod synq_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                tonic::Streaming<super::ClipboardEvent>,
-                            >,
+                            request: tonic::Request<super::ClipboardEvent>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -366,7 +364,7 @@ pub mod synq_service_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let res = grpc.client_streaming(method, req).await;
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
