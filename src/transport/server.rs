@@ -177,6 +177,15 @@ impl SynqService for TransportServer {
     ) -> std::result::Result<Response<Empty>, Status> {
         let event = request.into_inner();
 
+        if event.clock == 0 {
+            self.active_state.reset();
+            trace!(
+                peer = %event.peer,
+                "Active state reset",
+            );
+            return Ok(Response::new(Empty {}));
+        }
+
         let current_clock = self.active_state.get_clock();
         if event.clock <= current_clock {
             trace!(
