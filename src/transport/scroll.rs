@@ -7,7 +7,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 
-use crate::errors::{error, info};
+use crate::errors::{error, info, warn};
 use crate::errors::{Result, Error, ErrorKind};
 use crate::config::PeerConfig;
 use crate::synq::{
@@ -89,7 +89,9 @@ impl ScrollTransport {
 
                 for peer_info in &peer_infos {
                     if peer_info.public_key == active_peer {
-                        let _ = peer_info.tx.try_send(event);
+                        if let Err(e) = peer_info.tx.try_send(event) {
+                            warn!("scroll: Dropped scroll event: {}", e);
+                        }
                     }
                 }
             }
