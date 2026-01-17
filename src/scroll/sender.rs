@@ -1,13 +1,11 @@
-use std::fs::File;
-use std::io::Write;
 use std::mem;
 use std::ptr;
 
 use crate::errors::trace;
 
-use crate::errors::{Error, ErrorKind, Result};
+use crate::errors::Result;
 use super::event::InputEvent;
-use super::utils::setup_uinput_scroll;
+use super::utils::SharedUinput;
 use super::constants::{
     EV_SYN,
     EV_REL,
@@ -19,15 +17,12 @@ use super::constants::{
 };
 
 pub struct ScrollSender {
-    uinput: File,
+    uinput: SharedUinput,
 }
 
 impl ScrollSender {
-    pub fn new() -> Result<Self> {
-        let uinput = setup_uinput_scroll()?;
-        Ok(Self {
-            uinput
-        })
+    pub fn new(uinput: SharedUinput) -> Self {
+        Self { uinput }
     }
 
     pub fn send(&mut self, delta_x: f64, delta_y: f64) -> Result<()> {
@@ -115,10 +110,6 @@ impl ScrollSender {
     }
 
     fn write_event(&mut self, event: &InputEvent) -> Result<()> {
-        let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe { mem::transmute(*event) };
-        (&self.uinput).write_all(&bytes).map_err(|e| {
-            Error::wrap(e, ErrorKind::Write)
-                .with_msg("scroll: Failed to write scroll event")
-        })
+        self.uinput.write_event(event)
     }
 }
