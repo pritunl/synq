@@ -1,8 +1,11 @@
 use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::mem;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::sync::{Arc, Mutex};
 
 use crate::errors::{Error, ErrorKind, Result};
+use super::event::InputEvent;
 use super::constants::{
     UI_SET_EVBIT,
     UI_SET_KEYBIT,
@@ -39,7 +42,6 @@ use super::constants::{
     REL_HWHEEL_HI_RES,
     SCROLL_DEVICE_NAME,
     SCROLL_DEVICE_ID,
-    EVIOCGID,
 };
 
 #[repr(C)]
@@ -66,7 +68,21 @@ struct UinputSetup {
     ff_effects_max: u32,
 }
 
-pub(crate) fn setup_uinput_clone(source_fd: RawFd) -> Result<File> {
+fn bit_is_set(bits: &[u8], bit: usize) -> bool {
+    let byte_idx = bit / 8;
+    let bit_idx = bit % 8;
+    byte_idx < bits.len() && (bits[byte_idx] & (1 << bit_idx)) != 0
+}
+
+const fn eviocgbit(ev: u32, len: u32) -> libc::c_ulong {
+    (2u64 << 30) | (((len as u64) & 0x3fff) << 16) | (0x45u64 << 8) | (0x20 + ev) as u64
+}
+
+const fn eviocgabs(abs: u32) -> libc::c_ulong {
+    (2u64 << 30) | (24u64 << 16) | (0x45u64 << 8) | (0x40 + abs) as u64
+}
+
+pub(crate) fn setup_uinput_merged(source_fd: RawFd) -> Result<File> {
     let uinput = OpenOptions::new()
         .read(true)
         .write(true)
@@ -105,8 +121,8 @@ pub(crate) fn setup_uinput_clone(source_fd: RawFd) -> Result<File> {
             }
         }
 
+        libc::ioctl(ufd, UI_SET_EVBIT, EV_REL);
         if bit_is_set(&ev_bits, EV_REL as usize) {
-            libc::ioctl(ufd, UI_SET_EVBIT, EV_REL);
             let mut rel_bits = [0u8; (REL_MAX + 7) / 8 + 1];
             if libc::ioctl(
                 source_fd,
@@ -120,6 +136,10 @@ pub(crate) fn setup_uinput_clone(source_fd: RawFd) -> Result<File> {
                 }
             }
         }
+        libc::ioctl(ufd, UI_SET_RELBIT, REL_WHEEL as libc::c_int);
+        libc::ioctl(ufd, UI_SET_RELBIT, REL_HWHEEL as libc::c_int);
+        libc::ioctl(ufd, UI_SET_RELBIT, REL_WHEEL_HI_RES as libc::c_int);
+        libc::ioctl(ufd, UI_SET_RELBIT, REL_HWHEEL_HI_RES as libc::c_int);
 
         if bit_is_set(&ev_bits, EV_ABS as usize) {
             libc::ioctl(ufd, UI_SET_EVBIT, EV_ABS);
@@ -227,15 +247,9 @@ pub(crate) fn setup_uinput_clone(source_fd: RawFd) -> Result<File> {
             }
         }
 
-        let mut input_id: [u16; 4] = [0; 4];
-        libc::ioctl(source_fd, EVIOCGID, input_id.as_mut_ptr());
-
-        let mut name = [0u8; 80];
-        libc::ioctl(source_fd, eviocgname(80), name.as_mut_ptr());
-
         let mut setup: UinputSetup = mem::zeroed();
-        setup.id = input_id;
-        setup.name = name;
+        setup.id = SCROLL_DEVICE_ID;
+        setup.name[..SCROLL_DEVICE_NAME.len()].copy_from_slice(SCROLL_DEVICE_NAME);
 
         libc::ioctl(ufd, UI_DEV_SETUP, &setup);
         libc::ioctl(ufd, UI_DEV_CREATE, 0);
@@ -245,55 +259,28 @@ pub(crate) fn setup_uinput_clone(source_fd: RawFd) -> Result<File> {
     Ok(uinput)
 }
 
-pub(crate) fn setup_uinput_scroll() -> Result<File> {
-    let uinput = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/uinput")
-        .map_err(|e| {
-            Error::wrap(e, ErrorKind::Read)
-                .with_msg("scroll: Failed to open uinput device")
-        })?;
+#[derive(Clone)]
+pub struct SharedUinput {
+    inner: Arc<Mutex<File>>,
+}
 
-    let fd = uinput.as_raw_fd();
-
-    unsafe {
-        if libc::ioctl(fd, UI_SET_EVBIT, EV_REL) < 0 {
-            return Err(Error::wrap(std::io::Error::last_os_error(), ErrorKind::Exec)
-                .with_msg("scroll: Failed to set EV_REL"));
-        }
-
-        libc::ioctl(fd, UI_SET_RELBIT, REL_WHEEL as libc::c_int);
-        libc::ioctl(fd, UI_SET_RELBIT, REL_HWHEEL as libc::c_int);
-        libc::ioctl(fd, UI_SET_RELBIT, REL_WHEEL_HI_RES as libc::c_int);
-        libc::ioctl(fd, UI_SET_RELBIT, REL_HWHEEL_HI_RES as libc::c_int);
-
-        let mut setup: UinputSetup = mem::zeroed();
-        setup.id = SCROLL_DEVICE_ID;
-        setup.name[..SCROLL_DEVICE_NAME.len()].copy_from_slice(SCROLL_DEVICE_NAME);
-
-        libc::ioctl(fd, UI_DEV_SETUP, &setup);
-        libc::ioctl(fd, UI_DEV_CREATE, 0);
+impl SharedUinput {
+    pub fn new(source_fd: RawFd) -> Result<Self> {
+        let file = setup_uinput_merged(source_fd)?;
+        Ok(Self {
+            inner: Arc::new(Mutex::new(file)),
+        })
     }
 
-    std::thread::sleep(std::time::Duration::from_millis(200));
-    Ok(uinput)
-}
-
-fn bit_is_set(bits: &[u8], bit: usize) -> bool {
-    let byte_idx = bit / 8;
-    let bit_idx = bit % 8;
-    byte_idx < bits.len() && (bits[byte_idx] & (1 << bit_idx)) != 0
-}
-
-const fn eviocgname(len: u32) -> libc::c_ulong {
-    (2u64 << 30) | (((len as u64) & 0x3fff) << 16) | (0x45u64 << 8) | 0x06
-}
-
-const fn eviocgbit(ev: u32, len: u32) -> libc::c_ulong {
-    (2u64 << 30) | (((len as u64) & 0x3fff) << 16) | (0x45u64 << 8) | (0x20 + ev) as u64
-}
-
-const fn eviocgabs(abs: u32) -> libc::c_ulong {
-    (2u64 << 30) | (24u64 << 16) | (0x45u64 << 8) | (0x40 + abs) as u64
+    pub fn write_event(&self, event: &InputEvent) -> Result<()> {
+        let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe { mem::transmute(*event) };
+        let mut guard = self.inner.lock().map_err(|_| {
+            Error::new(ErrorKind::Exec)
+                .with_msg("scroll: Failed to acquire uinput lock")
+        })?;
+        (&mut *guard).write_all(&bytes).map_err(|e| {
+            Error::wrap(e, ErrorKind::Write)
+                .with_msg("scroll: Failed to write event to uinput")
+        })
+    }
 }
