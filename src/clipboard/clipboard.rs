@@ -1,6 +1,6 @@
 use arboard::{Clipboard, SetExtLinux, LinuxClipboardKind};
 
-use crate::errors::{Result, Error, ErrorKind};
+use crate::errors::{Result, Error, ErrorKind, error};
 
 pub async fn get_clipboard() -> Result<String> {
     tokio::task::spawn_blocking(|| {
@@ -22,25 +22,26 @@ pub async fn get_clipboard() -> Result<String> {
     )?
 }
 
-pub async fn set_clipboard(text: String) -> Result<()> {
+pub fn set_clipboard(text: String) {
     tokio::task::spawn_blocking(move || {
-        let mut clipboard = Clipboard::new()
-            .map_err(|e| Error::wrap(e, ErrorKind::Write)
-                .with_msg("clipboard: Failed to initialize clipboard")
-            )?;
+        let mut clipboard = match Clipboard::new() {
+            Ok(c) => c,
+            Err(e) => {
+                let e = Error::wrap(e, ErrorKind::Write)
+                    .with_msg("clipboard: Failed to initialize clipboard");
+                error(&e);
+                return;
+            }
+        };
 
-        clipboard.set()
-            .clipboard(LinuxClipboardKind::Clipboard)
+        if let Err(e) = clipboard.set()
             .wait()
+            .clipboard(LinuxClipboardKind::Clipboard)
             .text(text)
-            .map_err(|e| Error::wrap(e, ErrorKind::Write)
-                .with_msg("clipboard: Failed to write clipboard text")
-            )?;
-
-        Ok(())
-    })
-    .await
-    .map_err(|e| Error::wrap(e, ErrorKind::Write)
-        .with_msg("clipboard: Task join failed")
-    )?
+        {
+            let e = Error::wrap(e, ErrorKind::Write)
+                .with_msg("clipboard: Failed to write clipboard text");
+            error(&e);
+        }
+    });
 }
