@@ -68,6 +68,12 @@ impl ActiveState {
         }
         self.active_peer.read().unwrap().as_deref() == Some(peer)
     }
+
+    pub fn reset(&self) {
+        *self.active_peer.write().unwrap() = None;
+        self.clock.store(0, Ordering::SeqCst);
+        self.host_active.store(false, Ordering::Release);
+    }
 }
 
 pub struct ActiveRequestEvent;
