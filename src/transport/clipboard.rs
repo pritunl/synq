@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Channel;
 
 use crate::errors::{error, trace};
@@ -26,7 +25,7 @@ impl ClipboardTransport {
         key_store: Arc<KeyStore>,
         public_key: String,
     ) -> mpsc::Sender<ClipboardSendEvent> {
-        let (tx, mut rx) = mpsc::channel::<ClipboardSendEvent>(1);
+        let (tx, mut rx) = mpsc::channel::<ClipboardSendEvent>(16);
 
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
@@ -66,20 +65,11 @@ async fn send_clipboard(
 
     let mut client = connect(peer_address).await?;
 
-    let (tx, rx) = mpsc::channel(1);
-    tx.send(event).await
+    client.clipboard(event)
+        .await
         .map_err(|e| Error::wrap(e, ErrorKind::Network)
-            .with_msg("transport: Failed to queue clipboard event"))?;
-    drop(tx);
-
-    let out_stream = ReceiverStream::new(rx);
-
-    if let Err(e) = client.clipboard(out_stream).await {
-        let e = Error::wrap(e, ErrorKind::Network)
             .with_msg("transport: Failed to send clipboard")
-            .with_ctx("address", peer_address);
-        error(&e);
-    }
+            .with_ctx("address", peer_address))?;
 
     trace!("Clipboard sent to {}", peer_address);
 
