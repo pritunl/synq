@@ -6,4 +6,4 @@ mod clipboard;
 mod active;
 
 pub use transport::{Transport, PeerState, ScrollInjectRx};
-pub use active::ActiveState;
+pub use active::{ActiveState, send_active_state};
