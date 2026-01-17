@@ -83,37 +83,20 @@ impl SynqService for TransportServer {
 
     async fn clipboard(
         &self,
-        request: Request<Streaming<ClipboardEvent>>,
+        request: Request<ClipboardEvent>,
     ) -> std::result::Result<Response<Empty>, Status> {
         if !self.config.server.clipboard_destination {
             return Err(Status::permission_denied("clipboard destination not enabled"));
         }
 
-        trace!("Clipboard connection established");
+        let event = request.into_inner();
 
-        let config = self.config.clone();
-        let key_store = self.key_store.clone();
-        let last_set_clipboard = self.last_set_clipboard.clone();
-        let mut in_stream = request.into_inner();
-
-        while let Some(result) = in_stream.next().await {
-            match result {
-                Ok(event) => {
-                    if let Err(e) = handle_clipboard_event(
-                        &config, &key_store, &last_set_clipboard, event,
-                    ).await {
-                        error(&e);
-                    }
-                }
-                Err(e) => {
-                    let e = Error::wrap(e, ErrorKind::Network)
-                        .with_msg("transport: Failed to read clipboard event");
-                    error(&e);
-                    break;
-                }
-            }
+        if let Err(e) = handle_clipboard_event(
+            &self.config, &self.key_store, &self.last_set_clipboard, event,
+        ).await {
+            error(&e);
+            return Err(Status::internal("failed to handle clipboard event"));
         }
-        trace!("Clipboard connection closed");
 
         Ok(Response::new(Empty {}))
     }
@@ -244,7 +227,7 @@ async fn handle_clipboard_event(
     trace!("Received clipboard from peer {}", peer.address);
 
     last_set_clipboard.store(utils::mono_time_ms(), Ordering::SeqCst);
-    clipboard::set_clipboard(plaintext).await?;
+    clipboard::set_clipboard(plaintext);
 
     Ok(())
 }
