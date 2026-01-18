@@ -49,67 +49,60 @@ impl ScrollSender {
             "Sending scroll event"
         );
 
+        // Calculate discrete scroll clicks (120 units = 1 click)
+        let discrete_y = hi_res_y / 120;
+        let discrete_x = hi_res_x / 120;
+
+        let mut events = Vec::with_capacity(5);
+
         if hi_res_y != 0 {
-            let event = InputEvent {
+            events.push(InputEvent {
                 tv_sec: now.tv_sec,
                 tv_usec: now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_WHEEL_HI_RES,
                 value: hi_res_y,
-            };
-            self.write_event(&event)?;
+            });
         }
 
         if hi_res_x != 0 {
-            let event = InputEvent {
+            events.push(InputEvent {
                 tv_sec: now.tv_sec,
                 tv_usec: now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_HWHEEL_HI_RES,
                 value: hi_res_x,
-            };
-            self.write_event(&event)?;
+            });
         }
 
-        // Calculate discrete scroll clicks (120 units = 1 click)
-        let discrete_y = hi_res_y / 120;
-        let discrete_x = hi_res_x / 120;
-
         if discrete_y != 0 {
-            let event = InputEvent {
+            events.push(InputEvent {
                 tv_sec: now.tv_sec,
                 tv_usec: now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_WHEEL,
                 value: discrete_y,
-            };
-            self.write_event(&event)?;
+            });
         }
 
         if discrete_x != 0 {
-            let event = InputEvent {
+            events.push(InputEvent {
                 tv_sec: now.tv_sec,
                 tv_usec: now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_HWHEEL,
                 value: discrete_x,
-            };
-            self.write_event(&event)?;
+            });
         }
 
-        let syn_event = InputEvent {
+        events.push(InputEvent {
             tv_sec: now.tv_sec,
             tv_usec: now.tv_usec,
             type_: EV_SYN,
             code: SYN_REPORT,
             value: 0,
-        };
-        self.write_event(&syn_event)?;
+        });
 
-        Ok(())
-    }
-
-    fn write_event(&mut self, event: &InputEvent) -> Result<()> {
-        self.uinput.write_event(event)
+        self.uinput.write_events(&events)
     }
 }
