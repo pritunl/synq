@@ -16,6 +16,8 @@ use super::constants::{
     SYN_REPORT,
 };
 
+const EVENT_SIZE: usize = mem::size_of::<InputEvent>();
+
 pub struct ScrollSender {
     uinput: SharedUinput,
 }
@@ -53,56 +55,72 @@ impl ScrollSender {
         let discrete_y = hi_res_y / 120;
         let discrete_x = hi_res_x / 120;
 
-        let mut events = Vec::with_capacity(5);
+        let mut buf = [0u8; 5 * EVENT_SIZE];
+        let mut offset = 0;
 
         if hi_res_y != 0 {
-            events.push(InputEvent {
+            let event = InputEvent {
                 tv_sec: now.tv_sec,
                 tv_usec: now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_WHEEL_HI_RES,
                 value: hi_res_y,
-            });
+            };
+            let bytes: [u8; EVENT_SIZE] = unsafe { mem::transmute(event) };
+            buf[offset..offset + EVENT_SIZE].copy_from_slice(&bytes);
+            offset += EVENT_SIZE;
         }
 
         if hi_res_x != 0 {
-            events.push(InputEvent {
+            let event = InputEvent {
                 tv_sec: now.tv_sec,
                 tv_usec: now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_HWHEEL_HI_RES,
                 value: hi_res_x,
-            });
+            };
+            let bytes: [u8; EVENT_SIZE] = unsafe { mem::transmute(event) };
+            buf[offset..offset + EVENT_SIZE].copy_from_slice(&bytes);
+            offset += EVENT_SIZE;
         }
 
         if discrete_y != 0 {
-            events.push(InputEvent {
+            let event = InputEvent {
                 tv_sec: now.tv_sec,
                 tv_usec: now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_WHEEL,
                 value: discrete_y,
-            });
+            };
+            let bytes: [u8; EVENT_SIZE] = unsafe { mem::transmute(event) };
+            buf[offset..offset + EVENT_SIZE].copy_from_slice(&bytes);
+            offset += EVENT_SIZE;
         }
 
         if discrete_x != 0 {
-            events.push(InputEvent {
+            let event = InputEvent {
                 tv_sec: now.tv_sec,
                 tv_usec: now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_HWHEEL,
                 value: discrete_x,
-            });
+            };
+            let bytes: [u8; EVENT_SIZE] = unsafe { mem::transmute(event) };
+            buf[offset..offset + EVENT_SIZE].copy_from_slice(&bytes);
+            offset += EVENT_SIZE;
         }
 
-        events.push(InputEvent {
+        let syn_event = InputEvent {
             tv_sec: now.tv_sec,
             tv_usec: now.tv_usec,
             type_: EV_SYN,
             code: SYN_REPORT,
             value: 0,
-        });
+        };
+        let bytes: [u8; EVENT_SIZE] = unsafe { mem::transmute(syn_event) };
+        buf[offset..offset + EVENT_SIZE].copy_from_slice(&bytes);
+        offset += EVENT_SIZE;
 
-        self.uinput.write_events(&events)
+        self.uinput.write_raw(&buf[..offset])
     }
 }
