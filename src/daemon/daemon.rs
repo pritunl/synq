@@ -9,7 +9,7 @@ use crate::errors::{Result, Error, ErrorKind};
 use crate::config::Config;
 use crate::crypto::KeyStore;
 use crate::clipboard;
-use crate::scroll::{self, ScrollReceiver, ScrollBlocker, ScrollSender, ScrollSource};
+use crate::scroll::{self, ScrollReceiver, ScrollBlocker, ScrollSender, ScrollSource, SharedUinput};
 use crate::transport::{Transport, ScrollInjectRx, ActiveState, send_active_state};
 use crate::utils;
 use crate::synq::{ScrollEvent, ScrollSource as ProtoScrollSource};
@@ -77,16 +77,8 @@ fn run_scroll_source(
     }
 }
 
-fn run_scroll_inject(rx: ScrollInjectRx) {
-    let mut sender = match ScrollSender::new() {
-        Ok(s) => s,
-        Err(e) => {
-            let e = Error::wrap(e, ErrorKind::Exec)
-                .with_msg("daemon: Failed to create scroll sender");
-            error(&e);
-            return;
-        }
-    };
+fn run_scroll_inject(rx: ScrollInjectRx, uinput: SharedUinput) {
+    let mut sender = ScrollSender::new(uinput);
     info!("Started scroll sender");
 
     while let Some(event) = rx.recv() {
@@ -100,6 +92,7 @@ fn run_scroll_inject(rx: ScrollInjectRx) {
 
 fn run_scroll_blocker(
     device_path: String,
+    uinput: SharedUinput,
     active_state: ActiveState,
     transport: Transport,
     cancel: CancellationToken,
@@ -110,6 +103,7 @@ fn run_scroll_blocker(
 
     let mut blocker = match ScrollBlocker::new(
         &device_path,
+        uinput,
         active_state,
         Some(on_scroll),
     ) {
@@ -252,28 +246,54 @@ pub async fn run(config: Config) -> Result<()> {
         }
     }
 
-    if let Some(rx) = scroll_inject_rx {
-        tokio::task::spawn_blocking(move || {
-            run_scroll_inject(rx);
-        });
-    }
-
     if config.server.scroll_destination {
         let blocker_devices = scroll::resolve_devices(
             &config.server.scroll_input_devices)?;
+
+        let first_device_path = blocker_devices.first()
+            .map(|d| d.path.clone())
+            .ok_or_else(|| Error::new(ErrorKind::Invalid)
+                .with_msg("daemon: No scroll input devices configured"))?;
+
+        let source_file = std::fs::OpenOptions::new()
+            .read(true)
+            .open(&first_device_path)
+            .map_err(|e| Error::wrap(e, ErrorKind::Read)
+                .with_msg("daemon: Failed to open scroll device for uinput setup")
+                .with_ctx("path", &first_device_path))?;
+        let source_fd = std::os::unix::io::AsRawFd::as_raw_fd(&source_file);
+
+        let shared_uinput = SharedUinput::new(source_fd)
+            .map_err(|e| Error::wrap(e, ErrorKind::Exec)
+                .with_msg("daemon: Failed to create shared uinput device"))?;
+
+        drop(source_file);
+
+        if let Some(rx) = scroll_inject_rx {
+            let inject_uinput = shared_uinput.clone();
+            tokio::task::spawn_blocking(move || {
+                run_scroll_inject(rx, inject_uinput);
+            });
+        }
+
         for device in blocker_devices {
             let blocker_cancel = cancel.clone();
             let blocker_active_state = transport.active_state().clone();
             let blocker_transport = transport.clone();
+            let blocker_uinput = shared_uinput.clone();
             tokio::task::spawn_blocking(move || {
                 run_scroll_blocker(
                     device.path,
+                    blocker_uinput,
                     blocker_active_state,
                     blocker_transport,
                     blocker_cancel,
                 );
             });
         }
+    } else if let Some(rx) = scroll_inject_rx {
+        warn!("Scroll inject receiver exists but scroll_destination is disabled");
+        drop(rx);
     }
 
     if should_run_clipboard_source {
