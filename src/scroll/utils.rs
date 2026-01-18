@@ -284,22 +284,14 @@ impl SharedUinput {
         })
     }
 
-    pub fn write_events(&self, events: &[InputEvent]) -> Result<()> {
-        if events.is_empty() {
-            return Ok(());
-        }
-        let mut buf = Vec::with_capacity(events.len() * mem::size_of::<InputEvent>());
-        for event in events {
-            let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe { mem::transmute(*event) };
-            buf.extend_from_slice(&bytes);
-        }
+    pub fn write_raw(&self, bytes: &[u8]) -> Result<()> {
         let mut guard = self.inner.lock().map_err(|_| {
             Error::new(ErrorKind::Exec)
                 .with_msg("scroll: Failed to acquire uinput lock")
         })?;
-        (&mut *guard).write_all(&buf).map_err(|e| {
+        (&mut *guard).write_all(bytes).map_err(|e| {
             Error::wrap(e, ErrorKind::Write)
-                .with_msg("scroll: Failed to write events to uinput")
+                .with_msg("scroll: Failed to write event to uinput")
         })
     }
 }
