@@ -1,5 +1,5 @@
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::mem;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
@@ -18,11 +18,11 @@ use super::constants::{
     REL_HWHEEL_HI_RES,
 };
 use super::event::InputEvent;
-use super::utils::setup_uinput_clone;
+use super::utils::SharedUinput;
 
 pub struct ScrollBlocker {
     device: File,
-    uinput: File,
+    uinput: SharedUinput,
     active_state: ActiveState,
     on_scroll: Option<Box<dyn Fn() + Send>>,
 }
@@ -30,6 +30,7 @@ pub struct ScrollBlocker {
 impl ScrollBlocker {
     pub fn new(
         device_path: impl AsRef<Path>,
+        uinput: SharedUinput,
         active_state: ActiveState,
         on_scroll: Option<Box<dyn Fn() + Send>>,
     ) -> Result<Self> {
@@ -45,8 +46,6 @@ impl ScrollBlocker {
             })?;
 
         let fd = device.as_raw_fd();
-
-        let uinput = setup_uinput_clone(fd)?;
 
         if unsafe { libc::ioctl(fd, EVIOCGRAB, 1) } != 0 {
             return Err(Error::wrap(std::io::Error::last_os_error(), ErrorKind::Exec)
@@ -85,14 +84,7 @@ impl ScrollBlocker {
         if is_scroll {
             trace!(code = event.code, value = event.value, "Blocked scroll event");
         } else {
-            let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe {
-                mem::transmute(event)
-            };
-
-            (&self.uinput).write_all(&bytes).map_err(|e| {
-                Error::wrap(e, ErrorKind::Write)
-                    .with_msg("scroll: Failed to write event to uinput")
-            })?;
+            self.uinput.write_event(&event)?;
         }
 
         if inactive {
