@@ -15,8 +15,9 @@ use crate::utils;
 use crate::synq::{ScrollEvent, ScrollSource as ProtoScrollSource};
 
 use super::constants::CLIPBOARD_TTL;
+use super::monitor::run_scroll_source_monitor;
 
-fn run_scroll_source(
+pub(crate) fn run_scroll_source(
     device_path: String,
     transport: Transport,
     scroll_reverse: bool,
@@ -212,8 +213,6 @@ pub async fn run(config: Config) -> Result<()> {
     let cancel = transport.cancel_token();
 
     if should_run_scroll_source {
-        let resolved_devices = scroll::resolve_devices(&config.server.scroll_input_devices)?;
-
         let host_key = config.server.public_key.clone();
         for peer in &config.peers {
             if peer.scroll_destination {
@@ -231,19 +230,12 @@ pub async fn run(config: Config) -> Result<()> {
             }
         }
 
-        for device in resolved_devices {
-            let transport = transport.clone();
-            let device_cancel = cancel.clone();
-            tokio::task::spawn_blocking(move || {
-                run_scroll_source(
-                    device.path,
-                    transport,
-                    device.scroll_reverse,
-                    device.scroll_modifier,
-                    device_cancel,
-                );
-            });
-        }
+        let input_devices = config.server.scroll_input_devices.clone();
+        let monitor_transport = transport.clone();
+        let monitor_cancel = cancel.clone();
+        tokio::task::spawn_blocking(move || {
+            run_scroll_source_monitor(input_devices, monitor_transport, monitor_cancel);
+        });
     }
 
     if config.server.scroll_destination {
