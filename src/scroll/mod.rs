@@ -1,6 +1,7 @@
 #[allow(clippy::module_inception)]
 mod scroll;
 mod utils;
+pub use utils::SharedUinput;
 mod constants;
 pub use constants::*;
 mod device;
