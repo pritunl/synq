@@ -69,22 +69,23 @@ impl ScrollBlocker {
                 .with_msg("scroll: Failed to read input event")
         })?;
 
-        let event: InputEvent = unsafe {
-            mem::transmute(buf)
-        };
+        // Read type and code directly from buffer without full transmute
+        // InputEvent layout: tv_sec (8), tv_usec (8), type (2), code (2), value (4)
+        let type_ = u16::from_ne_bytes([buf[16], buf[17]]);
+        let code = u16::from_ne_bytes([buf[18], buf[19]]);
 
         let inactive = !self.active_state.is_host_active();
 
-        let is_scroll = event.type_ == EV_REL as u16
-            && (event.code == REL_WHEEL
-                || event.code == REL_HWHEEL
-                || event.code == REL_WHEEL_HI_RES
-                || event.code == REL_HWHEEL_HI_RES);
+        let is_scroll = type_ == EV_REL as u16
+            && (code == REL_WHEEL
+                || code == REL_HWHEEL
+                || code == REL_WHEEL_HI_RES
+                || code == REL_HWHEEL_HI_RES);
 
         if is_scroll {
-            trace!(code = event.code, value = event.value, "Blocked scroll event");
+            trace!(code = code, "Blocked scroll event");
         } else {
-            self.uinput.write_event(&event)?;
+            self.uinput.write_raw(&buf)?;
         }
 
         if inactive {
