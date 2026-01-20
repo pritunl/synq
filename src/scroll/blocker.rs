@@ -6,6 +6,7 @@ use std::path::Path;
 
 use tokio_util::sync::CancellationToken;
 use crate::errors::trace;
+use crate::utils::mono_time_ms;
 
 use crate::errors::{Error, ErrorKind, Result};
 use crate::transport::ActiveState;
@@ -83,6 +84,7 @@ impl ScrollBlocker {
                 || code == REL_HWHEEL_HI_RES);
 
         if is_scroll {
+            self.active_state.set_last_scroll(mono_time_ms());
             trace!(code = code, "Blocked scroll event");
         } else {
             self.uinput.write_raw(&buf)?;
