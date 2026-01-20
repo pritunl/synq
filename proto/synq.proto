@@ -5,7 +5,7 @@ package synq;
 service SynqService {
   rpc Scroll(stream ScrollEvent) returns (Empty);
   rpc Clipboard(ClipboardEvent) returns (Empty);
-  rpc ActiveRequest(ActiveEvent) returns (ActiveEvent);
+  rpc ActivateRequest(ActivateEvent) returns (ActiveEvent);
   rpc ActiveState(ActiveEvent) returns (Empty);
 }
 
@@ -29,6 +29,11 @@ message ClipboardEvent {
 message ActiveEvent {
   string peer = 1;
   uint64 clock = 2;
+}
+
+message ActivateEvent {
+  string peer = 1;
+  bool state = 2;
 }
 
 message Empty {}
