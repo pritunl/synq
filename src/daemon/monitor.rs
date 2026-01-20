@@ -14,7 +14,7 @@ use crate::errors::{error, info};
 use crate::errors::{Error, ErrorKind};
 use crate::transport::Transport;
 
-use super::daemon::run_scroll_source;
+use super::scroll::run_scroll_source;
 
 struct Interface;
 
