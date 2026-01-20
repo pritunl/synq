@@ -129,9 +129,9 @@ pub mod synq_service_client {
                 .insert(GrpcMethod::new("synq.SynqService", "Clipboard"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn active_request(
+        pub async fn activate_request(
             &mut self,
-            request: impl tonic::IntoRequest<super::ActiveEvent>,
+            request: impl tonic::IntoRequest<super::ActivateEvent>,
         ) -> std::result::Result<tonic::Response<super::ActiveEvent>, tonic::Status> {
             self.inner
                 .ready()
@@ -143,11 +143,11 @@ pub mod synq_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/synq.SynqService/ActiveRequest",
+                "/synq.SynqService/ActivateRequest",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("synq.SynqService", "ActiveRequest"));
+                .insert(GrpcMethod::new("synq.SynqService", "ActivateRequest"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn active_state(
@@ -194,9 +194,9 @@ pub mod synq_service_server {
             &self,
             request: tonic::Request<super::ClipboardEvent>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn active_request(
+        async fn activate_request(
             &self,
-            request: tonic::Request<super::ActiveEvent>,
+            request: tonic::Request<super::ActivateEvent>,
         ) -> std::result::Result<tonic::Response<super::ActiveEvent>, tonic::Status>;
         async fn active_state(
             &self,
@@ -369,11 +369,13 @@ pub mod synq_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/synq.SynqService/ActiveRequest" => {
+                "/synq.SynqService/ActivateRequest" => {
                     #[allow(non_camel_case_types)]
-                    struct ActiveRequestSvc<T: SynqService>(pub Arc<T>);
-                    impl<T: SynqService> tonic::server::UnaryService<super::ActiveEvent>
-                    for ActiveRequestSvc<T> {
+                    struct ActivateRequestSvc<T: SynqService>(pub Arc<T>);
+                    impl<
+                        T: SynqService,
+                    > tonic::server::UnaryService<super::ActivateEvent>
+                    for ActivateRequestSvc<T> {
                         type Response = super::ActiveEvent;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -381,11 +383,11 @@ pub mod synq_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ActiveEvent>,
+                            request: tonic::Request<super::ActivateEvent>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SynqService>::active_request(&inner, request).await
+                                <T as SynqService>::activate_request(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -396,7 +398,7 @@ pub mod synq_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = ActiveRequestSvc(inner);
+                        let method = ActivateRequestSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

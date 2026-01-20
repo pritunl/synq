@@ -23,6 +23,13 @@ pub struct ActiveEvent {
     #[prost(uint64, tag = "2")]
     pub clock: u64,
 }
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ActivateEvent {
+    #[prost(string, tag = "1")]
+    pub peer: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub state: bool,
+}
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Empty {
 }
