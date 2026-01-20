@@ -15,7 +15,8 @@ use super::scroll::{run_scroll_blocker, run_scroll_inject};
 use super::clipboard::run_clipboard_source;
 
 pub async fn run(config: Config) -> Result<()> {
-    let should_run_server = config.server.clipboard_destination || config.server.scroll_destination;
+    let should_run_server = config.server.clipboard_destination
+        || config.server.scroll_destination;
     let should_run_clipboard_source = config.server.clipboard_source;
     let should_run_scroll_source = config.server.scroll_source;
 
