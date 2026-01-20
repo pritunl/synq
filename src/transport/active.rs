@@ -11,7 +11,7 @@ use crate::errors::{Error, ErrorKind};
 use crate::config::PeerConfig;
 use crate::synq::{
     synq_service_client::SynqServiceClient,
-    ActiveEvent,
+    ActiveEvent, ActivateEvent,
 };
 
 
@@ -154,7 +154,7 @@ async fn run_active_handler(
             "Sending active request to source",
         );
 
-        match send_active_request(&source.address, &host_public_key).await {
+        match send_activate_request(&source.address, &host_public_key).await {
             Ok(response) => {
                 active_state.set_active(response.peer.clone(), response.clock);
                 trace!(
@@ -170,21 +170,21 @@ async fn run_active_handler(
     }
 }
 
-async fn send_active_request(
+async fn send_activate_request(
     address: &str,
     host_public_key: &str,
 ) -> crate::errors::Result<ActiveEvent> {
     let mut client = connect(address).await?;
 
-    let request = ActiveEvent {
+    let request = ActivateEvent {
         peer: host_public_key.to_string(),
-        clock: 0,
+        state: true,
     };
 
-    let response = client.active_request(request)
+    let response = client.activate_request(request)
         .await
         .map_err(|e| Error::wrap(e, ErrorKind::Network)
-            .with_msg("transport: Active request failed")
+            .with_msg("transport: Activate request failed")
             .with_ctx("address", address))?;
 
     Ok(response.into_inner())
