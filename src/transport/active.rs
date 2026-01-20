@@ -86,7 +86,10 @@ impl ActiveState {
     }
 }
 
-pub struct ActiveRequestEvent;
+pub enum ActiveRequestEvent {
+    Activate,
+    Deactivate,
+}
 
 pub struct ActiveTransport;
 
@@ -132,7 +135,7 @@ async fn run_active_handler(
     cancel: CancellationToken,
 ) {
     loop {
-        let _event = tokio::select! {
+        let event = tokio::select! {
             _ = cancel.cancelled() => break,
             result = rx.recv() => {
                 match result {
@@ -142,39 +145,75 @@ async fn run_active_handler(
             }
         };
 
-        if let Some(active_peer) = active_state.get_active_peer() {
-            if active_peer == host_public_key {
-                trace!(
-                    peer = %host_public_key,
-                    active_peer = active_peer,
-                    "Already active, skipping active request",
-                );
-                continue;
-            }
-        }
-
         let Some(ref source) = source_peer else {
             trace!("No scroll source peer configured, cannot send active request");
             continue;
         };
 
-        trace!(
-            address = &source.address,
-            peer = %host_public_key,
-            "Sending active request to source",
-        );
+        match event {
+            ActiveRequestEvent::Activate => {
+                if let Some(active_peer) = active_state.get_active_peer() {
+                    if active_peer == host_public_key {
+                        trace!(
+                            peer = %host_public_key,
+                            active_peer = active_peer,
+                            "Already active, skipping activate request",
+                        );
+                        continue;
+                    }
+                }
 
-        match send_activate_request(&source.address, &host_public_key).await {
-            Ok(response) => {
-                active_state.set_active(response.peer.clone(), response.clock);
                 trace!(
-                    peer = %response.peer,
-                    clock = response.clock,
-                    "Received active response",
+                    address = &source.address,
+                    peer = %host_public_key,
+                    "Sending activate request to source",
                 );
+
+                match send_activate_request(&source.address, &host_public_key, true).await {
+                    Ok(response) => {
+                        active_state.set_active(response.peer.clone(), response.clock);
+                        trace!(
+                            peer = %response.peer,
+                            clock = response.clock,
+                            "Received activate response",
+                        );
+                    }
+                    Err(e) => {
+                        error(&e);
+                    }
+                }
             }
-            Err(e) => {
-                error(&e);
+            ActiveRequestEvent::Deactivate => {
+                if let Some(active_peer) = active_state.get_active_peer() {
+                    if active_peer != host_public_key {
+                        trace!(
+                            peer = %host_public_key,
+                            active_peer = active_peer,
+                            "Not active, skipping deactivate request",
+                        );
+                        continue;
+                    }
+                }
+
+                trace!(
+                    address = &source.address,
+                    peer = %host_public_key,
+                    "Sending deactivate request to source",
+                );
+
+                match send_activate_request(&source.address, &host_public_key, false).await {
+                    Ok(response) => {
+                        active_state.set_active(response.peer.clone(), response.clock);
+                        trace!(
+                            peer = %response.peer,
+                            clock = response.clock,
+                            "Received deactivate response",
+                        );
+                    }
+                    Err(e) => {
+                        error(&e);
+                    }
+                }
             }
         }
     }
@@ -183,12 +222,13 @@ async fn run_active_handler(
 async fn send_activate_request(
     address: &str,
     host_public_key: &str,
+    state: bool,
 ) -> crate::errors::Result<ActiveEvent> {
     let mut client = connect(address).await?;
 
     let request = ActivateEvent {
         peer: host_public_key.to_string(),
-        state: true,
+        state,
     };
 
     let response = client.activate_request(request)
