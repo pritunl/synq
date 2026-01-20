@@ -21,6 +21,7 @@ pub struct ActiveState {
     clock: Arc<AtomicU64>,
     host_active: Arc<AtomicBool>,
     host_public_key: Arc<String>,
+    last_scroll: Arc<AtomicU64>,
 }
 
 impl ActiveState {
@@ -30,7 +31,16 @@ impl ActiveState {
             clock: Arc::new(AtomicU64::new(0)),
             host_active: Arc::new(AtomicBool::new(false)),
             host_public_key: Arc::new(host_public_key),
+            last_scroll: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    pub fn set_last_scroll(&self, time: u64) {
+        self.last_scroll.store(time, Ordering::Relaxed);
+    }
+
+    pub fn get_last_scroll(&self) -> u64 {
+        self.last_scroll.load(Ordering::Relaxed)
     }
 
     pub fn is_host_active(&self) -> bool {
