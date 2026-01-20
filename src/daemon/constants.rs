@@ -1,1 +1,1 @@
-pub(crate) const CLIPBOARD_TTL: u64 = 500;
+pub(crate) const CLIPBOARD_TTL: u64 = 1000;
