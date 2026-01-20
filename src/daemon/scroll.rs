@@ -88,7 +88,7 @@ pub(crate) fn run_scroll_blocker(
     cancel: CancellationToken,
 ) {
     let on_scroll: Box<dyn Fn() + Send> = Box::new(move || {
-        transport.send_active_request();
+        transport.send_activate_request();
     });
 
     let mut blocker = match ScrollBlocker::new(
