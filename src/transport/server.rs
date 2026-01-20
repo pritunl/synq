@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tokio_stream::StreamExt;
+use tokio::sync::mpsc;
 use tonic::{
     transport::Server as TonicServer,
     Request,
@@ -22,13 +23,14 @@ use crate::synq::{
     ScrollEvent, ClipboardEvent, ActiveEvent, ActivateEvent, Empty,
 };
 
-use super::active::{ActiveState, send_active_state};
+use super::active::{ActiveState, ActiveRequestEvent, send_active_state};
 
 pub struct TransportServer {
     config: Config,
     key_store: Arc<KeyStore>,
     last_set_clipboard: Arc<AtomicU64>,
     scroll_inject_tx: Option<std::sync::mpsc::SyncSender<ScrollEvent>>,
+    active_tx: mpsc::Sender<ActiveRequestEvent>,
     active_state: ActiveState,
 }
 
@@ -58,6 +60,16 @@ impl SynqService for TransportServer {
                         delta_y = evt.delta_y,
                         "Received scroll event",
                     );
+
+                    let last_scroll = self.active_state.get_last_scroll();
+                    let now = utils::mono_time_ms();
+
+                    if last_scroll > 0 && now - last_scroll > 100 {
+                        if self.active_state.is_host_active() {
+                            self.send_deactivate_request();
+                        }
+                        continue;
+                    }
 
                     if let Err(std::sync::mpsc::TrySendError::Disconnected(_)) =
                         scroll_tx.try_send(evt)
@@ -127,18 +139,25 @@ impl SynqService for TransportServer {
             return Err(Status::permission_denied("peer is not a scroll destination"));
         }
 
-        let new_clock = self.active_state.increment_and_set(event.peer.clone());
+        let new_peer = if event.state {
+            peer.public_key.clone()
+        } else {
+            self.config.server.public_key.clone()
+        };
+
+        let new_clock = self.active_state.increment_and_set(new_peer.clone());
 
         trace!(
-            peer = %event.peer,
+            peer = %new_peer,
             clock = new_clock,
+            state = event.state,
             "Active peer updated via request",
         );
 
         for dest_peer in &self.config.peers {
-            if dest_peer.scroll_destination && dest_peer.public_key != event.peer {
+            if dest_peer.scroll_destination && dest_peer.public_key != new_peer {
                 let address = dest_peer.address.clone();
-                let peer_key = event.peer.clone();
+                let peer_key = new_peer.clone();
                 let clock = new_clock;
                 tokio::spawn(async move {
                     if let Err(e) = send_active_state(&address, &peer_key, clock).await {
@@ -149,7 +168,7 @@ impl SynqService for TransportServer {
         }
 
         Ok(Response::new(ActiveEvent {
-            peer: event.peer,
+            peer: new_peer,
             clock: new_clock,
         }))
     }
@@ -238,6 +257,7 @@ impl TransportServer {
         key_store: Arc<KeyStore>,
         last_set_clipboard: Arc<AtomicU64>,
         scroll_inject_tx: Option<std::sync::mpsc::SyncSender<ScrollEvent>>,
+        active_tx: mpsc::Sender<ActiveRequestEvent>,
         active_state: ActiveState,
     ) -> Self {
         Self {
@@ -245,8 +265,17 @@ impl TransportServer {
             key_store,
             last_set_clipboard,
             scroll_inject_tx,
+            active_tx,
             active_state,
         }
+    }
+
+    pub fn send_deactivate_request(&self) -> bool {
+        if let Err(e) = self.active_tx.try_send(ActiveRequestEvent::Deactivate) {
+            warn!("transport: Dropped deactivate request event: {}", e);
+            return false;
+        }
+        true
     }
 
     pub async fn run(self) -> Result<()> {
