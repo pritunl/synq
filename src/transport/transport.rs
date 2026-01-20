@@ -182,9 +182,9 @@ impl Transport {
         &self.last_set_clipboard
     }
 
-    pub fn send_active_request(&self) -> bool {
+    pub fn send_activate_request(&self) -> bool {
         if let Err(e) = self.active_tx.try_send(ActiveRequestEvent) {
-            warn!("transport: Dropped active request event: {}", e);
+            warn!("transport: Dropped activate request event: {}", e);
             return false;
         }
         true
