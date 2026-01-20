@@ -19,7 +19,7 @@ use crate::clipboard;
 use crate::utils;
 use crate::synq::{
     synq_service_server::{SynqService, SynqServiceServer},
-    ScrollEvent, ClipboardEvent, ActiveEvent, Empty,
+    ScrollEvent, ClipboardEvent, ActiveEvent, ActivateEvent, Empty,
 };
 
 use super::active::{ActiveState, send_active_state};
@@ -101,9 +101,9 @@ impl SynqService for TransportServer {
         Ok(Response::new(Empty {}))
     }
 
-    async fn active_request(
+    async fn activate_request(
         &self,
-        request: Request<ActiveEvent>,
+        request: Request<ActivateEvent>,
     ) -> std::result::Result<Response<ActiveEvent>, Status> {
         if !self.config.server.scroll_source {
             return Err(Status::permission_denied("scroll source not enabled"));
@@ -117,13 +117,13 @@ impl SynqService for TransportServer {
         let peer = match peer {
             Some(p) => p,
             None => {
-                warn!("Received active request from unknown peer: {}", event.peer);
+                warn!("Received activate request from unknown peer: {}", event.peer);
                 return Err(Status::permission_denied("unknown peer"));
             }
         };
 
         if !peer.scroll_destination {
-            warn!("Received active request from non-destination peer: {}", event.peer);
+            warn!("Received activate request from non-destination peer: {}", event.peer);
             return Err(Status::permission_denied("peer is not a scroll destination"));
         }
 
