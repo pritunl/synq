@@ -80,6 +80,13 @@ impl Transport {
 
         let active_state = ActiveState::new(config.server.public_key.clone());
 
+        let active_tx = ActiveTransport::start(
+            &config.peers,
+            config.server.public_key.clone(),
+            active_state.clone(),
+            cancel.clone(),
+        );
+
         let should_run_server = config.server.clipboard_destination
             || config.server.scroll_destination
             || config.server.scroll_source;
@@ -89,6 +96,7 @@ impl Transport {
                 key_store.clone(),
                 last_set_clipboard.clone(),
                 scroll_inject_tx,
+                active_tx.clone(),
                 active_state.clone(),
             );
             let server_status = status.clone();
@@ -116,13 +124,6 @@ impl Transport {
         let clipboard_tx = ClipboardTransport::start(
             key_store.clone(),
             config.server.public_key.clone(),
-        );
-
-        let active_tx = ActiveTransport::start(
-            &config.peers,
-            config.server.public_key.clone(),
-            active_state.clone(),
-            cancel.clone(),
         );
 
         info!("Transport initialized");
@@ -183,8 +184,17 @@ impl Transport {
     }
 
     pub fn send_activate_request(&self) -> bool {
-        if let Err(e) = self.active_tx.try_send(ActiveRequestEvent) {
+        if let Err(e) = self.active_tx.try_send(ActiveRequestEvent::Activate) {
             warn!("transport: Dropped activate request event: {}", e);
+            return false;
+        }
+        true
+    }
+
+    #[allow(dead_code)]
+    pub fn send_deactivate_request(&self) -> bool {
+        if let Err(e) = self.active_tx.try_send(ActiveRequestEvent::Deactivate) {
+            warn!("transport: Dropped deactivate request event: {}", e);
             return false;
         }
         true
