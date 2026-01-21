@@ -24,6 +24,7 @@ use crate::synq::{
 };
 
 use super::active::{ActiveState, ActiveRequestEvent, send_active_state};
+use super::constants::SCROLL_TTL;
 
 pub struct TransportServer {
     config: Config,
@@ -64,7 +65,7 @@ impl SynqService for TransportServer {
                     let last_scroll = self.active_state.get_last_scroll();
                     let now = utils::mono_time_ms();
 
-                    if last_scroll > 0 && now - last_scroll > 100 {
+                    if last_scroll > 0 && now - last_scroll > SCROLL_TTL {
                         if self.active_state.is_host_active() {
                             self.send_deactivate_request();
                         }
