@@ -15,6 +15,7 @@ pub(crate) const EV_SND: libc::c_int = 0x12;
 pub(crate) const EV_FF: libc::c_int = 0x15;
 
 pub(crate) const EVIOCGRAB: libc::c_ulong = 0x40044590;
+#[allow(unused)]
 pub(crate) const EVIOCGID: libc::c_ulong = (2u64 << 30) | (8u64 << 16) | (0x45u64 << 8) | 0x02;
 
 pub(crate) const UI_SET_EVBIT: libc::c_ulong = 0x40045564;
