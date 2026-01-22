@@ -272,6 +272,7 @@ impl SharedUinput {
         })
     }
 
+    #[allow(unused)]
     pub fn write_event(&self, event: &InputEvent) -> Result<()> {
         let bytes: [u8; mem::size_of::<InputEvent>()] = unsafe { mem::transmute(*event) };
         let mut guard = self.inner.lock().map_err(|_| {
