@@ -22,6 +22,7 @@ pub struct ActiveState {
     host_active: Arc<AtomicBool>,
     host_public_key: Arc<String>,
     last_scroll: Arc<AtomicU64>,
+    last_blur: Arc<AtomicU64>,
 }
 
 impl ActiveState {
@@ -32,6 +33,7 @@ impl ActiveState {
             host_active: Arc::new(AtomicBool::new(false)),
             host_public_key: Arc::new(host_public_key),
             last_scroll: Arc::new(AtomicU64::new(0)),
+            last_blur: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -41,6 +43,14 @@ impl ActiveState {
 
     pub fn get_last_scroll(&self) -> u64 {
         self.last_scroll.load(Ordering::Relaxed)
+    }
+
+    pub fn set_last_blur(&self, time: u64) {
+        self.last_blur.store(time, Ordering::Relaxed);
+    }
+
+    pub fn get_last_blur(&self) -> u64 {
+        self.last_blur.load(Ordering::Relaxed)
     }
 
     pub fn is_host_active(&self) -> bool {
