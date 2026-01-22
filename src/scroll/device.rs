@@ -134,7 +134,9 @@ pub fn list_devices() -> Result<Vec<Device>> {
 
 pub struct ResolvedDevice {
     pub path: String,
+    #[allow(unused)]
     pub scroll_reverse: bool,
+    #[allow(unused)]
     pub scroll_modifier: f64,
 }
 
