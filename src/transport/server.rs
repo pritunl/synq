@@ -24,7 +24,7 @@ use crate::synq::{
 };
 
 use super::active::{ActiveState, ActiveRequestEvent, send_active_state};
-use super::constants::SCROLL_TTL;
+use super::constants::{SCROLL_TTL, BLUR_TTL};
 
 pub struct TransportServer {
     config: Config,
@@ -62,14 +62,21 @@ impl SynqService for TransportServer {
                         "Received scroll event",
                     );
 
-                    let last_scroll = self.active_state.get_last_scroll();
                     let now = utils::mono_time_ms();
+                    let last_scroll = self.active_state.get_last_scroll();
 
                     if last_scroll > 0 && now - last_scroll > SCROLL_TTL {
-                        if self.active_state.is_host_active() {
-                            self.send_deactivate_request();
+                        let last_blur = self.active_state.get_last_blur();
+                        if last_blur == 0 {
+                            self.active_state.set_last_blur(now);
+                        } else if now - last_blur > BLUR_TTL {
+                            if self.active_state.is_host_active() {
+                                self.send_deactivate_request();
+                            }
+                            continue;
                         }
-                        continue;
+                    } else {
+                        self.active_state.set_last_blur(0);
                     }
 
                     if let Err(std::sync::mpsc::TrySendError::Disconnected(_)) =
