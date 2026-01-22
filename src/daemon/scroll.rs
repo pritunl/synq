@@ -67,8 +67,12 @@ pub(crate) fn run_scroll_source(
     }
 }
 
-pub(crate) fn run_scroll_inject(rx: ScrollInjectRx, uinput: SharedUinput) {
-    let mut sender = ScrollSender::new(uinput);
+pub(crate) fn run_scroll_inject(
+    rx: ScrollInjectRx,
+    uinput: SharedUinput,
+    transport: Transport,
+) {
+    let mut sender = ScrollSender::new(uinput, transport);
     info!("Started scroll sender");
 
     while let Some(event) = rx.recv() {
