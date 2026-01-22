@@ -17,9 +17,6 @@ use crate::config::Config;
 #[command(about = "Synq - TODO")]
 struct Args {
     #[arg(long)]
-    daemon: bool,
-
-    #[arg(long)]
     debug: bool,
 
     #[command(subcommand)]
@@ -28,6 +25,7 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    Daemon,
     ListDevices,
     DetectDevices,
 }
@@ -47,6 +45,14 @@ async fn main() -> Result<()> {
 
     if let Some(command) = args.command {
         match command {
+            Command::Daemon => {
+                let config = Config::load("/home/cloud/.config/synq.conf").await?;
+                if config.is_modified() {
+                    config.save().await?;
+                }
+
+                daemon::run(config).await?;
+            }
             Command::ListDevices => {
                 let devices = scroll::list_devices()?;
                 for device in devices {
@@ -62,16 +68,6 @@ async fn main() -> Result<()> {
                 scroll::detect_scroll_devices(config).await?;
             }
         }
-        return Ok(());
-    }
-
-    if args.daemon {
-        let config = Config::load("/home/cloud/.config/synq.conf").await?;
-        if config.is_modified() {
-            config.save().await?;
-        }
-
-        daemon::run(config).await?
     }
 
     Ok(())
