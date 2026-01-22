@@ -91,8 +91,9 @@ pub async fn run(config: Config) -> Result<()> {
 
         if let Some(rx) = scroll_inject_rx {
             let inject_uinput = shared_uinput.clone();
+            let inject_transport = transport.clone();
             tokio::task::spawn_blocking(move || {
-                run_scroll_inject(rx, inject_uinput);
+                run_scroll_inject(rx, inject_uinput, inject_transport);
             });
         }
 
