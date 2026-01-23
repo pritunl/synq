@@ -72,25 +72,23 @@ impl ScrollBlocker {
 
         // Read type and code directly from buffer without full transmute
         // InputEvent layout: tv_sec (8), tv_usec (8), type (2), code (2), value (4)
-        let type_ = u16::from_ne_bytes([buf[16], buf[17]]);
-        let code = u16::from_ne_bytes([buf[18], buf[19]]);
-
-        let inactive = !self.active_state.is_host_active();
-
-        let is_scroll = type_ == EV_REL as u16
-            && (code == REL_WHEEL
+        if u16::from_ne_bytes([buf[16], buf[17]]) == EV_REL as u16 {
+            let code = u16::from_ne_bytes([buf[18], buf[19]]);
+            if code == REL_WHEEL
                 || code == REL_HWHEEL
                 || code == REL_WHEEL_HI_RES
-                || code == REL_HWHEEL_HI_RES);
-
-        if is_scroll {
-            self.active_state.set_last_scroll(mono_time_ms());
-            trace!(code = code, "Blocked scroll event");
+                || code == REL_HWHEEL_HI_RES
+            {
+                self.active_state.set_last_scroll(mono_time_ms());
+                trace!(code = code, "Blocked scroll event");
+            } else {
+                self.uinput.write_raw(&buf)?;
+            }
         } else {
             self.uinput.write_raw(&buf)?;
         }
 
-        if inactive {
+        if !self.active_state.is_host_active() {
             trace!("Not active, sending active request");
             if let Some(ref on_scroll) = self.on_scroll {
                 on_scroll();
