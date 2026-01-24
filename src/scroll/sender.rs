@@ -1,9 +1,10 @@
 use std::mem;
 use std::ptr;
 
-use crate::errors::trace;
+use crate::errors::{Result, trace};
+use crate::transport::{Transport};
+use crate::utils;
 
-use crate::errors::Result;
 use super::event::InputEvent;
 use super::utils::SharedUinput;
 use super::constants::{
@@ -14,21 +15,27 @@ use super::constants::{
     REL_WHEEL_HI_RES,
     REL_HWHEEL_HI_RES,
     SYN_REPORT,
+    SCROLL_TTL,
+    BLUR_TTL,
 };
 
 const EVENT_SIZE: usize = mem::size_of::<InputEvent>();
 
 pub struct ScrollSender {
     uinput: SharedUinput,
+    transport: Transport,
 }
 
 impl ScrollSender {
-    pub fn new(uinput: SharedUinput) -> Self {
-        Self { uinput }
+    pub fn new(uinput: SharedUinput, transport: Transport) -> Self {
+        Self {
+            uinput,
+            transport,
+        }
     }
 
     pub fn send(&mut self, delta_x: f64, delta_y: f64) -> Result<()> {
-        let now = unsafe {
+        let input_now = unsafe {
             let mut tv: libc::timeval = mem::zeroed();
             libc::gettimeofday(&mut tv, ptr::null_mut());
             tv
@@ -60,8 +67,8 @@ impl ScrollSender {
 
         if hi_res_y != 0 {
             let event = InputEvent {
-                tv_sec: now.tv_sec,
-                tv_usec: now.tv_usec,
+                tv_sec: input_now.tv_sec,
+                tv_usec: input_now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_WHEEL_HI_RES,
                 value: hi_res_y,
@@ -73,8 +80,8 @@ impl ScrollSender {
 
         if hi_res_x != 0 {
             let event = InputEvent {
-                tv_sec: now.tv_sec,
-                tv_usec: now.tv_usec,
+                tv_sec: input_now.tv_sec,
+                tv_usec: input_now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_HWHEEL_HI_RES,
                 value: hi_res_x,
@@ -86,8 +93,8 @@ impl ScrollSender {
 
         if discrete_y != 0 {
             let event = InputEvent {
-                tv_sec: now.tv_sec,
-                tv_usec: now.tv_usec,
+                tv_sec: input_now.tv_sec,
+                tv_usec: input_now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_WHEEL,
                 value: discrete_y,
@@ -99,8 +106,8 @@ impl ScrollSender {
 
         if discrete_x != 0 {
             let event = InputEvent {
-                tv_sec: now.tv_sec,
-                tv_usec: now.tv_usec,
+                tv_sec: input_now.tv_sec,
+                tv_usec: input_now.tv_usec,
                 type_: EV_REL as u16,
                 code: REL_HWHEEL,
                 value: discrete_x,
@@ -111,8 +118,8 @@ impl ScrollSender {
         }
 
         let syn_event = InputEvent {
-            tv_sec: now.tv_sec,
-            tv_usec: now.tv_usec,
+            tv_sec: input_now.tv_sec,
+            tv_usec: input_now.tv_usec,
             type_: EV_SYN,
             code: SYN_REPORT,
             value: 0,
@@ -120,6 +127,23 @@ impl ScrollSender {
         let bytes: [u8; EVENT_SIZE] = unsafe { mem::transmute(syn_event) };
         buf[offset..offset + EVENT_SIZE].copy_from_slice(&bytes);
         offset += EVENT_SIZE;
+
+        let now = utils::mono_time_ms();
+        let last_scroll = self.transport.active_state.get_last_scroll();
+
+        if last_scroll > 0 && now - last_scroll > SCROLL_TTL {
+            let last_blur = self.transport.active_state.get_last_blur();
+            if last_blur == 0 {
+                self.transport.active_state.set_last_blur(now);
+            } else if now - last_blur > BLUR_TTL {
+                if self.transport.active_state.is_host_active() {
+                    self.transport.send_deactivate_request();
+                }
+                return Ok(());
+            }
+        } else {
+            self.transport.active_state.set_last_blur(0);
+        }
 
         self.uinput.write_raw(&buf[..offset])
     }
