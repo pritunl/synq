@@ -14,7 +14,7 @@ use crate::config::Config;
 
 #[derive(Parser, Debug)]
 #[command(name = "synq")]
-#[command(about = "Synq - TODO")]
+#[command(about = "Synq - Clipboard and scroll wheel sharing")]
 struct Args {
     #[arg(long)]
     debug: bool,
