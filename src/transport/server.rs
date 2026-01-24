@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tokio_stream::StreamExt;
-use tokio::sync::mpsc;
 use tonic::{
     transport::Server as TonicServer,
     Request,
@@ -23,15 +22,13 @@ use crate::synq::{
     ScrollEvent, ClipboardEvent, ActiveEvent, ActivateEvent, Empty,
 };
 
-use super::active::{ActiveState, ActiveRequestEvent, send_active_state};
-use super::constants::{SCROLL_TTL, BLUR_TTL};
+use super::active::{ActiveState, send_active_state};
 
 pub struct TransportServer {
     config: Config,
     key_store: Arc<KeyStore>,
     last_set_clipboard: Arc<AtomicU64>,
     scroll_inject_tx: Option<std::sync::mpsc::SyncSender<ScrollEvent>>,
-    active_tx: mpsc::Sender<ActiveRequestEvent>,
     active_state: ActiveState,
 }
 
@@ -61,23 +58,6 @@ impl SynqService for TransportServer {
                         delta_y = evt.delta_y,
                         "Received scroll event",
                     );
-
-                    let now = utils::mono_time_ms();
-                    let last_scroll = self.active_state.get_last_scroll();
-
-                    if last_scroll > 0 && now - last_scroll > SCROLL_TTL {
-                        let last_blur = self.active_state.get_last_blur();
-                        if last_blur == 0 {
-                            self.active_state.set_last_blur(now);
-                        } else if now - last_blur > BLUR_TTL {
-                            if self.active_state.is_host_active() {
-                                self.send_deactivate_request();
-                            }
-                            continue;
-                        }
-                    } else {
-                        self.active_state.set_last_blur(0);
-                    }
 
                     if let Err(std::sync::mpsc::TrySendError::Disconnected(_)) =
                         scroll_tx.try_send(evt)
@@ -265,7 +245,6 @@ impl TransportServer {
         key_store: Arc<KeyStore>,
         last_set_clipboard: Arc<AtomicU64>,
         scroll_inject_tx: Option<std::sync::mpsc::SyncSender<ScrollEvent>>,
-        active_tx: mpsc::Sender<ActiveRequestEvent>,
         active_state: ActiveState,
     ) -> Self {
         Self {
@@ -273,17 +252,8 @@ impl TransportServer {
             key_store,
             last_set_clipboard,
             scroll_inject_tx,
-            active_tx,
             active_state,
         }
-    }
-
-    pub fn send_deactivate_request(&self) -> bool {
-        if let Err(e) = self.active_tx.try_send(ActiveRequestEvent::Deactivate) {
-            warn!("transport: Dropped deactivate request event: {}", e);
-            return false;
-        }
-        true
     }
 
     pub async fn run(self) -> Result<()> {
