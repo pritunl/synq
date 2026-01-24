@@ -45,7 +45,7 @@ pub struct Transport {
     scroll_tx: mpsc::Sender<ScrollEvent>,
     clipboard_tx: mpsc::Sender<ClipboardSendEvent>,
     active_tx: mpsc::Sender<ActiveRequestEvent>,
-    active_state: ActiveState,
+    pub active_state: ActiveState,
     #[allow(dead_code)]
     status: Arc<TransportStatus>,
     last_set_clipboard: Arc<AtomicU64>,
@@ -96,7 +96,6 @@ impl Transport {
                 key_store.clone(),
                 last_set_clipboard.clone(),
                 scroll_inject_tx,
-                active_tx.clone(),
                 active_state.clone(),
             );
             let server_status = status.clone();
