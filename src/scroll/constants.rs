@@ -67,6 +67,9 @@ pub(crate) const TOUCHPAD_DEVICE_NAME: &[u8] = b"Virtual Touchpad";
 #[allow(unused)]
 pub(crate) const TOUCHPAD_DEVICE_ID: [u16; 4] = [0x03, 0x0001, 0x0001, 0x0001];
 
+pub(crate) const SCROLL_TTL: u64 = 120;
+pub(crate) const BLUR_TTL: u64 = 50;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollSource {
     Wheel,
