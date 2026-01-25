@@ -105,10 +105,12 @@ impl ScrollBlocker {
         Ok(())
     }
 
+    #[allow(unused)]
     pub fn device_fd(&self) -> i32 {
         self.device.as_raw_fd()
     }
 
+    #[allow(unused)]
     pub fn release(fd: i32) {
         unsafe { libc::ioctl(fd, EVIOCGRAB, 0) };
     }
