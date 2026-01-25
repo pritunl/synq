@@ -24,7 +24,7 @@ pub(crate) async fn run_clipboard_source(
             let e = Error::wrap(e, ErrorKind::Exec)
                 .with_msg("daemon: Failed to start clipboard watcher");
             error(&e);
-            return;
+            std::process::exit(1);
         }
     };
 
