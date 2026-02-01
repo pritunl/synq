@@ -10,8 +10,7 @@ use libc::{O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY};
 use tokio_util::sync::CancellationToken;
 
 use crate::config::{Config, InputDevice};
-use crate::errors::{error, info};
-use crate::errors::{Error, ErrorKind};
+use crate::errors::{Error, ErrorKind, error, info};
 use crate::transport::Transport;
 
 use super::scroll::run_scroll_source;
