@@ -1,8 +1,9 @@
 use tokio_util::sync::CancellationToken;
 
-use crate::errors::{error, info, trace};
-use crate::errors::{Error, ErrorKind};
-use crate::scroll::{ScrollReceiver, ScrollBlocker, ScrollSender, ScrollSource, SharedUinput};
+use crate::errors::{error, info, warn, trace};
+use crate::errors::{Error, ErrorKind, Result};
+use crate::config::Config;
+use crate::scroll::{ScrollReceiver, ScrollBlocker, ScrollSender, ScrollSource, SharedUinput, resolve_devices};
 use crate::transport::{Transport, ScrollInjectRx, ActiveState};
 use crate::synq::{ScrollEvent, ScrollSource as ProtoScrollSource};
 
@@ -119,4 +120,59 @@ pub(crate) fn run_scroll_blocker(
             .with_ctx("device", &device_path);
         error(&e);
     }
+}
+
+pub(crate) fn run_scroll_blockers(
+    config: &Config,
+    transport: Transport,
+    scroll_inject_rx: Option<ScrollInjectRx>,
+) -> Result<()> {
+    let blocker_devices = resolve_devices(
+        &config.server.scroll_input_devices)?;
+
+    let first_device_path = blocker_devices.first()
+        .map(|d| d.path.clone())
+        .ok_or_else(|| Error::new(ErrorKind::Invalid)
+            .with_msg("daemon: No scroll input devices configured"))?;
+
+    let source_file = std::fs::OpenOptions::new()
+        .read(true)
+        .open(&first_device_path)
+        .map_err(|e| Error::wrap(e, ErrorKind::Read)
+            .with_msg("daemon: Failed to open scroll device for uinput setup")
+            .with_ctx("path", &first_device_path))?;
+    let source_fd = std::os::unix::io::AsRawFd::as_raw_fd(&source_file);
+
+    let shared_uinput = SharedUinput::new(source_fd)
+        .map_err(|e| Error::wrap(e, ErrorKind::Exec)
+            .with_msg("daemon: Failed to create shared uinput device"))?;
+
+    drop(source_file);
+
+    if let Some(rx) = scroll_inject_rx {
+        let inject_uinput = shared_uinput.clone();
+        let inject_transport = transport.clone();
+        tokio::task::spawn_blocking(move || {
+            run_scroll_inject(rx, inject_uinput, inject_transport);
+        });
+    }
+
+    let cancel = transport.cancel_token();
+    for device in blocker_devices {
+        let blocker_cancel = cancel.clone();
+        let blocker_active_state = transport.active_state().clone();
+        let blocker_transport = transport.clone();
+        let blocker_uinput = shared_uinput.clone();
+        tokio::task::spawn_blocking(move || {
+            run_scroll_blocker(
+                device.path,
+                blocker_uinput,
+                blocker_active_state,
+                blocker_transport,
+                blocker_cancel,
+            );
+        });
+    }
+
+    Ok(())
 }
