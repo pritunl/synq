@@ -21,14 +21,14 @@ use crate::errors::{Result, Error, ErrorKind};
 pub struct ClipboardChange {
 }
 
-struct X11State {
+struct XlibState {
     conn: RustConnection,
     window: Window,
     clip_atom: Atom,
     last_timestamp: Mutex<u32>,
 }
 
-impl X11State {
+impl XlibState {
     fn new() -> Result<Self> {
         let (conn, screen_num) = RustConnection::connect(None)
             .map_err(|e| Error::wrap(e, ErrorKind::Network)
@@ -146,7 +146,7 @@ pub async fn watch_clipboard() -> Result<mpsc::Receiver<ClipboardChange>> {
     tokio::task::spawn_blocking(move || {
         trace!("Initializing X11 connection");
 
-        let state = match X11State::new() {
+        let state = match XlibState::new() {
             Ok(state) => {
                 if let Err(e) = init_tx.blocking_send(Ok(())) {
                     let e = Error::wrap(e, ErrorKind::Network)
