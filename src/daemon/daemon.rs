@@ -58,11 +58,14 @@ pub async fn run(config: Config) -> Result<()> {
             }
         }
 
-        let input_devices = config.server.scroll_input_devices.clone();
-        let monitor_transport = transport.clone();
-        let monitor_cancel = cancel.clone();
-        tokio::task::spawn_blocking(move || {
-            run_scroll_source_monitor(input_devices, monitor_transport, monitor_cancel);
+        tokio::task::spawn_blocking({
+            let config = config.clone();
+            let transport = transport.clone();
+            let cancel = cancel.clone();
+
+            move || {
+                run_scroll_source_monitor(config, transport, cancel);
+            }
         });
     }
 
