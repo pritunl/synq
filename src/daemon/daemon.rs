@@ -125,10 +125,7 @@ pub async fn run(config: Config) -> Result<()> {
             let transport = transport.clone();
 
             async move {
-                run_clipboard_source(
-                    config,
-                    transport,
-                ).await;
+                run_clipboard_source(config, transport).await;
             }
         });
     }
