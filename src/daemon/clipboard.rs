@@ -1,7 +1,5 @@
 use std::sync::atomic::Ordering;
 
-use tokio_util::sync::CancellationToken;
-
 use crate::errors::{error, info, warn, trace};
 use crate::errors::{Error, ErrorKind};
 use crate::config::Config;
@@ -14,10 +12,10 @@ use super::constants::CLIPBOARD_TTL;
 pub(crate) async fn run_clipboard_source(
     config: Config,
     transport: Transport,
-    cancel: CancellationToken,
 ) {
     info!("Starting clipboard source");
 
+    let cancel = transport.cancel_token();
     let mut clipboard_rx = match clipboard::watch_clipboard().await {
         Ok(rx) => rx,
         Err(e) => {
