@@ -61,10 +61,9 @@ pub async fn run(config: Config) -> Result<()> {
         tokio::task::spawn_blocking({
             let config = config.clone();
             let transport = transport.clone();
-            let cancel = cancel.clone();
 
             move || {
-                run_scroll_source_monitor(config, transport, cancel);
+                run_scroll_source_monitor(config, transport);
             }
         });
     }
