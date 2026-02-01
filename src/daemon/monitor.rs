@@ -9,7 +9,7 @@ use input::event::{DeviceEvent, EventTrait};
 use libc::{O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY};
 use tokio_util::sync::CancellationToken;
 
-use crate::config::InputDevice;
+use crate::config::{Config, InputDevice};
 use crate::errors::{error, info};
 use crate::errors::{Error, ErrorKind};
 use crate::transport::Transport;
@@ -45,7 +45,7 @@ struct ActiveReceiver {
 }
 
 pub(crate) fn run_scroll_source_monitor(
-    input_devices: Vec<InputDevice>,
+    config: Config,
     transport: Transport,
     cancel: CancellationToken,
 ) {
@@ -59,6 +59,7 @@ pub(crate) fn run_scroll_source_monitor(
 
     let fd = libinput.as_raw_fd();
     let mut active_receivers: HashMap<String, ActiveReceiver> = HashMap::new();
+    let input_devices = config.server.scroll_input_devices.clone();
 
     let matches_config = |name: &str| -> Option<&InputDevice> {
         input_devices.iter().find(|d| {
