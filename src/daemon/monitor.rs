@@ -46,7 +46,6 @@ struct ActiveReceiver {
 pub(crate) fn run_scroll_source_monitor(
     config: Config,
     transport: Transport,
-    cancel: CancellationToken,
 ) {
     let mut libinput = Libinput::new_with_udev(Interface);
     if libinput.udev_assign_seat("seat0").is_err() {
@@ -58,6 +57,7 @@ pub(crate) fn run_scroll_source_monitor(
 
     let fd = libinput.as_raw_fd();
     let mut active_receivers: HashMap<String, ActiveReceiver> = HashMap::new();
+    let cancel = transport.cancel_token();
     let input_devices = config.server.scroll_input_devices.clone();
 
     let matches_config = |name: &str| -> Option<&InputDevice> {
