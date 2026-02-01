@@ -121,13 +121,11 @@ pub async fn run(config: Config) -> Result<()> {
         tokio::spawn({
             let config = config.clone();
             let transport = transport.clone();
-            let cancel = cancel.clone();
 
             async move {
                 run_clipboard_source(
                     config,
                     transport,
-                    cancel,
                 ).await;
             }
         });
