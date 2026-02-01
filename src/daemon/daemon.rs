@@ -118,15 +118,18 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     if should_run_clipboard_source {
-        let clipboard_config = config.clone();
-        let clipboard_transport = transport.clone();
-        let clipboard_cancel = cancel.clone();
-        tokio::spawn(async move {
-            run_clipboard_source(
-                clipboard_config,
-                clipboard_transport,
-                clipboard_cancel,
-            ).await;
+        tokio::spawn({
+            let config = config.clone();
+            let transport = transport.clone();
+            let cancel = cancel.clone();
+
+            async move {
+                run_clipboard_source(
+                    config,
+                    transport,
+                    cancel,
+                ).await;
+            }
         });
     }
 
