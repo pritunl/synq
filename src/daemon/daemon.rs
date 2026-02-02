@@ -2,16 +2,15 @@ use std::sync::Arc;
 
 use tokio::time::{sleep, Duration};
 
-use crate::errors::{error, info, warn, trace};
+use crate::errors::{error, info, trace};
 use crate::errors::{Result, Error, ErrorKind};
 use crate::config::Config;
 use crate::crypto::KeyStore;
-use crate::scroll::{SharedUinput, resolve_devices};
 use crate::transport::{Transport, send_active_state};
 use crate::utils;
 
 use super::monitor::run_scroll_source_monitor;
-use super::scroll::{run_scroll_blocker, run_scroll_inject};
+use super::scroll::run_scroll_blockers;
 use super::clipboard::run_clipboard_source;
 
 pub async fn run(config: Config) -> Result<()> {
@@ -38,7 +37,6 @@ pub async fn run(config: Config) -> Result<()> {
             .with_msg("daemon: Failed to create key store"))?);
 
     let (transport, scroll_inject_rx) = Transport::new(&config, key_store).await?;
-    let cancel = transport.cancel_token();
 
     if should_run_scroll_source {
         let host_key = config.server.public_key.clone();
@@ -69,54 +67,7 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     if config.server.scroll_destination {
-        let blocker_devices = resolve_devices(
-            &config.server.scroll_input_devices)?;
-
-        let first_device_path = blocker_devices.first()
-            .map(|d| d.path.clone())
-            .ok_or_else(|| Error::new(ErrorKind::Invalid)
-                .with_msg("daemon: No scroll input devices configured"))?;
-
-        let source_file = std::fs::OpenOptions::new()
-            .read(true)
-            .open(&first_device_path)
-            .map_err(|e| Error::wrap(e, ErrorKind::Read)
-                .with_msg("daemon: Failed to open scroll device for uinput setup")
-                .with_ctx("path", &first_device_path))?;
-        let source_fd = std::os::unix::io::AsRawFd::as_raw_fd(&source_file);
-
-        let shared_uinput = SharedUinput::new(source_fd)
-            .map_err(|e| Error::wrap(e, ErrorKind::Exec)
-                .with_msg("daemon: Failed to create shared uinput device"))?;
-
-        drop(source_file);
-
-        if let Some(rx) = scroll_inject_rx {
-            let inject_uinput = shared_uinput.clone();
-            let inject_transport = transport.clone();
-            tokio::task::spawn_blocking(move || {
-                run_scroll_inject(rx, inject_uinput, inject_transport);
-            });
-        }
-
-        for device in blocker_devices {
-            let blocker_cancel = cancel.clone();
-            let blocker_active_state = transport.active_state().clone();
-            let blocker_transport = transport.clone();
-            let blocker_uinput = shared_uinput.clone();
-            tokio::task::spawn_blocking(move || {
-                run_scroll_blocker(
-                    device.path,
-                    blocker_uinput,
-                    blocker_active_state,
-                    blocker_transport,
-                    blocker_cancel,
-                );
-            });
-        }
-    } else if let Some(rx) = scroll_inject_rx {
-        warn!("Scroll inject receiver exists but scroll_destination is disabled");
-        drop(rx);
+        run_scroll_blockers(&config, transport.clone(), scroll_inject_rx)?;
     }
 
     if should_run_clipboard_source {
