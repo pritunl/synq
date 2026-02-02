@@ -67,7 +67,7 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     if config.server.scroll_destination {
-        run_scroll_blockers(&config, transport.clone()).await?;
+        run_scroll_blockers(&config, transport.clone())?;
     }
 
     if should_run_clipboard_source {
