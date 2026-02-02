@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
@@ -50,7 +51,7 @@ pub struct Transport {
     status: Arc<TransportStatus>,
     last_set_clipboard: Arc<AtomicU64>,
     cancel: CancellationToken,
-    scroll_inject_rx: Arc<RwLock<Option<ScrollInjectRx>>>,
+    scroll_inject_rx: Arc<Mutex<Option<ScrollInjectRx>>>,
 }
 
 pub struct ScrollInjectRx {
@@ -136,7 +137,7 @@ impl Transport {
             status,
             last_set_clipboard,
             cancel,
-            scroll_inject_rx: Arc::new(RwLock::new(scroll_inject_rx)),
+            scroll_inject_rx: Arc::new(Mutex::new(scroll_inject_rx)),
         })
     }
 
@@ -210,7 +211,7 @@ impl Transport {
         self.cancel.clone()
     }
 
-    pub async fn take_scroll_inject_rx(&self) -> Option<ScrollInjectRx> {
-        self.scroll_inject_rx.write().await.take()
+    pub fn take_scroll_inject_rx(&self) -> Option<ScrollInjectRx> {
+        self.scroll_inject_rx.lock().unwrap().take()
     }
 }
