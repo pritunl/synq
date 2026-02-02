@@ -50,6 +50,7 @@ pub struct Transport {
     status: Arc<TransportStatus>,
     last_set_clipboard: Arc<AtomicU64>,
     cancel: CancellationToken,
+    scroll_inject_rx: Arc<RwLock<Option<ScrollInjectRx>>>,
 }
 
 pub struct ScrollInjectRx {
@@ -66,7 +67,7 @@ impl Transport {
     pub async fn new(
         config: &Config,
         key_store: Arc<KeyStore>,
-    ) -> Result<(Self, Option<ScrollInjectRx>)> {
+    ) -> Result<Self> {
         let cancel = CancellationToken::new();
         let status = Arc::new(TransportStatus::new());
         let last_set_clipboard = Arc::new(AtomicU64::new(0));
@@ -127,18 +128,16 @@ impl Transport {
 
         info!("Transport initialized");
 
-        Ok((
-            Self {
-                scroll_tx,
-                clipboard_tx,
-                active_tx,
-                active_state,
-                status,
-                last_set_clipboard,
-                cancel,
-            },
-            scroll_inject_rx,
-        ))
+        Ok(Self {
+            scroll_tx,
+            clipboard_tx,
+            active_tx,
+            active_state,
+            status,
+            last_set_clipboard,
+            cancel,
+            scroll_inject_rx: Arc::new(RwLock::new(scroll_inject_rx)),
+        })
     }
 
     pub fn send_scroll(&self, event: ScrollEvent) -> bool {
@@ -209,5 +208,9 @@ impl Transport {
 
     pub fn cancel_token(&self) -> CancellationToken {
         self.cancel.clone()
+    }
+
+    pub async fn take_scroll_inject_rx(&self) -> Option<ScrollInjectRx> {
+        self.scroll_inject_rx.write().await.take()
     }
 }
