@@ -122,11 +122,12 @@ pub(crate) fn run_scroll_blocker(
     }
 }
 
-pub(crate) fn run_scroll_blockers(
+pub(crate) async fn run_scroll_blockers(
     config: &Config,
     transport: Transport,
-    scroll_inject_rx: Option<ScrollInjectRx>,
 ) -> Result<()> {
+    let scroll_inject_rx = transport.take_scroll_inject_rx().await;
+
     let blocker_devices = resolve_devices(
         &config.server.scroll_input_devices)?;
 
