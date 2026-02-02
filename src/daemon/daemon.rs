@@ -36,7 +36,7 @@ pub async fn run(config: Config) -> Result<()> {
         .map_err(|e| Error::wrap(e, ErrorKind::Exec)
             .with_msg("daemon: Failed to create key store"))?);
 
-    let (transport, scroll_inject_rx) = Transport::new(&config, key_store).await?;
+    let transport = Transport::new(&config, key_store).await?;
 
     if should_run_scroll_source {
         let host_key = config.server.public_key.clone();
@@ -67,7 +67,7 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     if config.server.scroll_destination {
-        run_scroll_blockers(&config, transport.clone(), scroll_inject_rx)?;
+        run_scroll_blockers(&config, transport.clone()).await?;
     }
 
     if should_run_clipboard_source {
