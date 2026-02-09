@@ -29,6 +29,7 @@ enum Command {
     Daemon,
     ListDevices,
     DetectDevices,
+    GenerateKey,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -69,6 +70,16 @@ async fn main() -> Result<()> {
                 }
 
                 scroll::detect_scroll_devices(config).await?;
+            }
+            Command::GenerateKey => {
+                let config_path = get_config_path()?;
+                let mut config = Config::load(&config_path).await?;
+
+                let (private_key, public_key) = crypto::generate_keypair();
+                config.set_keypair(private_key, public_key.clone());
+                config.save().await?;
+
+                println!("{}", public_key);
             }
         }
     }
