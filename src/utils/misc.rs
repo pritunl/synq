@@ -1,6 +1,9 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
+
+use crate::errors::{Result, Error, ErrorKind};
 
 static START_TIME: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 static SAFE_CHARS: LazyLock<HashSet<char>> = LazyLock::new(|| {
@@ -24,4 +27,12 @@ pub fn filter_str(s: &str, n: usize) -> String {
 pub fn mono_time_ms() -> u64 {
     let start = START_TIME.get_or_init(Instant::now);
     start.elapsed().as_millis() as u64
+}
+
+pub fn get_config_path() -> Result<PathBuf> {
+    let home = std::env::var("HOME")
+        .map_err(|e| Error::wrap(e, ErrorKind::Parse)
+            .with_msg("main: Failed to get home environment variable"))?;
+
+    Ok(PathBuf::from(home).join(".config/synq.conf"))
 }
