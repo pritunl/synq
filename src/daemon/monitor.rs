@@ -116,25 +116,28 @@ pub(crate) fn run_scroll_source_monitor(
 
                         info!("Scroll device connected: {} ({})", name, path);
 
-                        let receiver_cancel = CancellationToken::new();
-                        let receiver_transport = transport.clone();
-                        let receiver_path = path.clone();
-                        let scroll_reverse = config.scroll_reverse;
-                        let scroll_modifier = config.scroll_modifier;
-                        let task_cancel = receiver_cancel.clone();
+                        let cancel = CancellationToken::new();
 
-                        std::thread::spawn(move || {
-                            run_scroll_source(
-                                receiver_path,
-                                receiver_transport,
-                                scroll_reverse,
-                                scroll_modifier,
-                                task_cancel,
-                            );
+                        std::thread::spawn({
+                            let path = path.clone();
+                            let transport = transport.clone();
+                            let scroll_reverse = config.scroll_reverse;
+                            let scroll_modifier = config.scroll_modifier;
+                            let cancel = cancel.clone();
+
+                            move || {
+                                run_scroll_source(
+                                    path,
+                                    transport,
+                                    scroll_reverse,
+                                    scroll_modifier,
+                                    cancel,
+                                );
+                            }
                         });
 
                         active_receivers.insert(name, ActiveReceiver {
-                            cancel: receiver_cancel,
+                            cancel,
                         });
                     }
                 }
