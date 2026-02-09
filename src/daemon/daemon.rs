@@ -42,15 +42,18 @@ pub async fn run(config: Config) -> Result<()> {
         let host_key = config.server.public_key.clone();
         for peer in &config.peers {
             if peer.scroll_destination {
-                let address = peer.address.clone();
-                let peer_key = host_key.clone();
-                tokio::spawn(async move {
-                    trace!(
-                        peer = %address,
-                        "Send state reset",
-                    );
-                    if let Err(e) = send_active_state(&address, &peer_key, 0).await {
-                        error(&e);
+                tokio::spawn({
+                    let address = peer.address.clone();
+                    let host_key = host_key.clone();
+
+                    async move {
+                        trace!(
+                            peer = %address,
+                            "Send state reset",
+                        );
+                        if let Err(e) = send_active_state(&address, &host_key, 0).await {
+                            error(&e);
+                        }
                     }
                 });
             }
