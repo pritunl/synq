@@ -55,7 +55,8 @@ async fn main() -> Result<()> {
     if let Some(command) = args.command {
         match command {
             Command::Daemon => {
-                let config = Config::load("/home/cloud/.config/synq.conf").await?;
+                let config_path = get_config_path()?;
+                let config = Config::load(&config_path).await?;
                 if config.is_modified() {
                     config.save().await?;
                 }
@@ -69,7 +70,8 @@ async fn main() -> Result<()> {
                 }
             }
             Command::DetectDevices => {
-                let config = Config::load("/home/cloud/.config/synq.conf").await?;
+                let config_path = get_config_path()?;
+                let config = Config::load(&config_path).await?;
                 if config.is_modified() {
                     config.save().await?;
                 }
