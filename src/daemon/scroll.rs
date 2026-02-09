@@ -151,10 +151,13 @@ pub(crate) fn run_scroll_blockers(
     drop(source_file);
 
     if let Some(rx) = scroll_inject_rx {
-        let inject_uinput = shared_uinput.clone();
-        let inject_transport = transport.clone();
-        tokio::task::spawn_blocking(move || {
-            run_scroll_inject(rx, inject_uinput, inject_transport);
+        tokio::task::spawn_blocking({
+            let shared_uinput = shared_uinput.clone();
+            let transport = transport.clone();
+
+            move || {
+                run_scroll_inject(rx, shared_uinput, transport);
+            }
         });
     }
 
