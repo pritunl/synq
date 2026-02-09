@@ -1,6 +1,6 @@
 use tokio_util::sync::CancellationToken;
 
-use crate::errors::{error, info, warn, trace};
+use crate::errors::{error, info, trace};
 use crate::errors::{Error, ErrorKind, Result};
 use crate::config::Config;
 use crate::scroll::{ScrollReceiver, ScrollBlocker, ScrollSender, ScrollSource, SharedUinput, resolve_devices};
