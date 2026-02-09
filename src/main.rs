@@ -9,9 +9,9 @@ mod synq;
 mod transport;
 
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
-use crate::errors::{Result, Error, ErrorKind};
+use crate::errors::Result;
 use crate::config::Config;
+use crate::utils::get_config_path;
 
 #[derive(Parser, Debug)]
 #[command(name = "synq")]
@@ -29,14 +29,6 @@ enum Command {
     Daemon,
     ListDevices,
     DetectDevices,
-}
-
-fn get_config_path() -> Result<PathBuf> {
-    let home = std::env::var("HOME")
-        .map_err(|e| Error::wrap(e, ErrorKind::Parse)
-            .with_msg("main: Failed to get home environment variable"))?;
-
-    Ok(PathBuf::from(home).join(".config/synq.conf"))
 }
 
 #[tokio::main(flavor = "current_thread")]
