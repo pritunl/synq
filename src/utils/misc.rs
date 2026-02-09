@@ -32,7 +32,7 @@ pub fn mono_time_ms() -> u64 {
 pub fn get_config_path() -> Result<PathBuf> {
     let home = std::env::var("HOME")
         .map_err(|e| Error::wrap(e, ErrorKind::Parse)
-            .with_msg("main: Failed to get home environment variable"))?;
+            .with_msg("utils: Failed to get home environment variable"))?;
 
     Ok(PathBuf::from(home).join(".config/synq.conf"))
 }
