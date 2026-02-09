@@ -126,6 +126,11 @@ impl Config {
         self.modified
     }
 
+    pub fn set_keypair(&mut self, private_key: String, public_key: String) {
+        self.server.private_key = private_key;
+        self.server.public_key = public_key;
+    }
+
     fn normalize(&mut self) -> Result<()> {
         if self.server.private_key.is_empty() {
             let (secret, public) = generate_keypair();
