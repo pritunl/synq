@@ -144,12 +144,15 @@ impl SynqService for TransportServer {
 
         for dest_peer in &self.config.peers {
             if dest_peer.scroll_destination && dest_peer.public_key != new_peer {
-                let address = dest_peer.address.clone();
-                let peer_key = new_peer.clone();
-                let clock = new_clock;
-                tokio::spawn(async move {
-                    if let Err(e) = send_active_state(&address, &peer_key, clock).await {
-                        error(&e);
+                tokio::spawn({
+                    let address = dest_peer.address.clone();
+                    let new_peer = new_peer.clone();
+                    let new_clock = new_clock;
+
+                    async move {
+                        if let Err(e) = send_active_state(&address, &new_peer, new_clock).await {
+                            error(&e);
+                        }
                     }
                 });
             }
