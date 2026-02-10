@@ -73,27 +73,30 @@ impl ScrollTransport {
             });
         }
 
-        let fanout_cancel = cancel.clone();
-        tokio::spawn(async move {
-            loop {
-                let event = tokio::select! {
-                    _ = fanout_cancel.cancelled() => break,
-                    result = main_rx.recv() => {
-                        match result {
-                            Some(e) => e,
-                            None => break,
+        tokio::spawn({
+            let cancel = cancel.clone();
+
+            async move {
+                loop {
+                        let event = tokio::select! {
+                            _ = cancel.cancelled() => break,
+                            result = main_rx.recv() => {
+                            match result {
+                                Some(e) => e,
+                                None => break,
+                            }
                         }
-                    }
-                };
+                    };
 
-                let Some(active_peer) = active_state.get_active_peer() else {
-                    continue;
-                };
+                    let Some(active_peer) = active_state.get_active_peer() else {
+                        continue;
+                    };
 
-                for peer_info in &peer_infos {
-                    if peer_info.public_key == active_peer {
-                        if let Err(e) = peer_info.tx.try_send(event) {
-                            warn!("scroll: Dropped scroll event: {}", e);
+                    for peer_info in &peer_infos {
+                        if peer_info.public_key == active_peer {
+                            if let Err(e) = peer_info.tx.try_send(event) {
+                                warn!("scroll: Dropped scroll event: {}", e);
+                            }
                         }
                     }
                 }
