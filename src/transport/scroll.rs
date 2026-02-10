@@ -57,11 +57,14 @@ impl ScrollTransport {
 
             peer_states.push((peer.address.clone(), state.clone()));
 
-            let address = peer.address.clone();
-            let peer_cancel = cancel.clone();
-            let peer_state = state.clone();
-            tokio::spawn(async move {
-                run_peer_connection(address, peer_rx, peer_state, peer_cancel).await;
+            tokio::spawn({
+                let address = peer.address.clone();
+                let cancel = cancel.clone();
+                let state = state.clone();
+
+                async move {
+                    run_peer_connection(address, peer_rx, state, cancel).await;
+                }
             });
 
             peer_infos.push(PeerInfo {
