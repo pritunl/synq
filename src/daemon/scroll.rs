@@ -163,18 +163,21 @@ pub(crate) fn run_scroll_blockers(
 
     let cancel = transport.cancel_token();
     for device in blocker_devices {
-        let blocker_cancel = cancel.clone();
-        let blocker_active_state = transport.active_state().clone();
-        let blocker_transport = transport.clone();
-        let blocker_uinput = shared_uinput.clone();
-        tokio::task::spawn_blocking(move || {
-            run_scroll_blocker(
-                device.path,
-                blocker_uinput,
-                blocker_active_state,
-                blocker_transport,
-                blocker_cancel,
-            );
+        tokio::task::spawn_blocking({
+            let cancel = cancel.clone();
+            let active_state = transport.active_state().clone();
+            let transport = transport.clone();
+            let shared_uinput = shared_uinput.clone();
+
+            move || {
+                run_scroll_blocker(
+                    device.path,
+                    shared_uinput,
+                    active_state,
+                    transport,
+                    cancel,
+                );
+            }
         });
     }
 
