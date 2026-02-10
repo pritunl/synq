@@ -100,15 +100,18 @@ impl Transport {
                 scroll_inject_tx,
                 active_state.clone(),
             );
-            let server_status = status.clone();
-            tokio::spawn(async move {
-                server_status.server_running.store(true, Ordering::Relaxed);
-                if let Err(e) = server.run().await {
-                    let e = Error::wrap(e, ErrorKind::Network)
-                        .with_msg("transport: Server error");
-                    error(&e);
+            tokio::spawn({
+                let status = status.clone();
+
+                async move {
+                    status.server_running.store(true, Ordering::Relaxed);
+                    if let Err(e) = server.run().await {
+                        let e = Error::wrap(e, ErrorKind::Network)
+                            .with_msg("transport: Server error");
+                        error(&e);
+                    }
+                    status.server_running.store(false, Ordering::Relaxed);
                 }
-                server_status.server_running.store(false, Ordering::Relaxed);
             });
         }
 
