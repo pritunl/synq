@@ -78,9 +78,9 @@ impl ScrollTransport {
 
             async move {
                 loop {
-                        let event = tokio::select! {
-                            _ = cancel.cancelled() => break,
-                            result = main_rx.recv() => {
+                    let event = tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        result = main_rx.recv() => {
                             match result {
                                 Some(e) => e,
                                 None => break,
