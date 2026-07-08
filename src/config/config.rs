@@ -22,6 +22,8 @@ pub struct Config {
 pub struct ServerConfig {
     pub bind: String,
     #[serde(default)]
+    pub address: String,
+    #[serde(default)]
     pub private_key: String,
     #[serde(default)]
     pub public_key: String,
