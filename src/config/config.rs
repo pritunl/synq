@@ -119,6 +119,49 @@ impl Config {
         Ok(config)
     }
 
+    pub async fn load_or_create<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path = path.as_ref();
+
+        let exists = fs::try_exists(path)
+            .await
+            .map_err(|e| Error::wrap(e, ErrorKind::Read)
+                .with_msg("config: Failed to check file")
+                .with_ctx("path", path.display().to_string())
+            )?;
+        if exists {
+            return Self::load(path).await;
+        }
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| Error::wrap(e, ErrorKind::Write)
+                    .with_msg("config: Failed to create directory")
+                    .with_ctx("path", parent.display().to_string())
+                )?;
+        }
+
+        let mut config = Config {
+            path: path.to_path_buf(),
+            modified: true,
+            server: ServerConfig {
+                bind: DEFAULT_BIND.to_string(),
+                address: String::new(),
+                private_key: String::new(),
+                public_key: String::new(),
+                clipboard_source: false,
+                clipboard_destination: false,
+                scroll_source: false,
+                scroll_destination: false,
+                scroll_input_devices: Vec::new(),
+            },
+            peers: Vec::new(),
+        };
+        config.normalize()?;
+
+        Ok(config)
+    }
+
     pub async fn save(&self) -> Result<()> {
         self.validate()?;
 
