@@ -1,6 +1,7 @@
 mod utils;
 mod errors;
 mod config;
+mod configure;
 mod daemon;
 mod crypto;
 mod scroll;
@@ -56,6 +57,15 @@ async fn main() -> Result<()> {
                 }
 
                 daemon::run(config).await?;
+            }
+            Command::Configure => {
+                let config_path = get_config_path()?;
+                let config = Config::load_or_create(&config_path).await?;
+                if config.is_modified() {
+                    config.save().await?;
+                }
+
+                configure::configure(config).await?;
             }
             Command::ListDevices => {
                 let devices = scroll::list_devices()?;
