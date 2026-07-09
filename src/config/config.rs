@@ -5,8 +5,7 @@ use serde_saphyr::{from_str, to_string};
 
 use crate::errors::{Result, Error, ErrorKind};
 use crate::crypto::{generate_keypair, secret_key_to_public_key};
-
-pub const DEFAULT_BIND: &str = "[::]:8548";
+use super::constants::DEFAULT_BIND;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
