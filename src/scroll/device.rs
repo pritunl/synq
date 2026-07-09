@@ -3,6 +3,7 @@ use std::fs::{File, OpenOptions};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{AsRawFd, OwnedFd};
 use std::path::Path;
+use std::sync::mpsc::{Receiver, TryRecvError};
 
 use input::event::pointer::PointerEvent;
 use input::event::EventTrait;
@@ -172,6 +173,68 @@ pub fn resolve_devices(input_devices: &[InputDevice]) -> Result<Vec<ResolvedDevi
     }
 
     Ok(resolved)
+}
+
+pub fn detect_devices_interactive(
+    lines: &Receiver<String>,
+) -> Result<Vec<String>> {
+    let mut libinput = Libinput::new_with_udev(Interface);
+    libinput.udev_assign_seat("seat0").map_err(|_| {
+        Error::new(ErrorKind::Read).with_msg("device: Failed to assign udev seat")
+    })?;
+
+    let fd = libinput.as_raw_fd();
+    let mut detected: Vec<String> = Vec::new();
+
+    loop {
+        match lines.try_recv() {
+            Ok(_) | Err(TryRecvError::Disconnected) => return Ok(detected),
+            Err(TryRecvError::Empty) => {}
+        }
+
+        let mut pfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+
+        let ret = unsafe { libc::poll(&mut pfd, 1, 100) };
+        if ret < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(Error::wrap(err, ErrorKind::Read)
+                .with_msg("device: Poll failed"));
+        }
+
+        if ret == 0 {
+            continue;
+        }
+
+        libinput.dispatch().map_err(|e| {
+            Error::wrap(e, ErrorKind::Read).with_msg("device: Failed to dispatch libinput")
+        })?;
+
+        for event in &mut libinput {
+            if let Event::Pointer(pointer_event) = event {
+                let device = match &pointer_event {
+                    PointerEvent::ScrollWheel(e) => e.device(),
+                    PointerEvent::ScrollFinger(e) => e.device(),
+                    PointerEvent::ScrollContinuous(e) => e.device(),
+                    _ => continue,
+                };
+
+                let device_name = device.name().to_string();
+                if detected.contains(&device_name) {
+                    continue;
+                }
+
+                println!("Detected scroll from: {}", device_name);
+                detected.push(device_name);
+            }
+        }
+    }
 }
 
 pub async fn detect_scroll_devices(mut config: Config) -> Result<()> {
