@@ -38,6 +38,18 @@ pub struct ServerConfig {
     pub scroll_input_devices: Vec<InputDevice>,
 }
 
+impl ServerConfig {
+    pub fn bind_port(&self) -> Result<u16> {
+        self.bind
+            .rsplit_once(':')
+            .and_then(|(_, port)| port.parse::<u16>().ok())
+            .ok_or_else(|| Error::new(ErrorKind::Parse)
+                .with_msg("config: Failed to parse bind port")
+                .with_ctx("bind", self.bind.clone())
+            )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerConfig {
     pub address: String,
