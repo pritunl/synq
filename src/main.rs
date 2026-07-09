@@ -7,6 +7,7 @@ mod scroll;
 mod clipboard;
 mod synq;
 mod transport;
+mod broadcast;
 
 use clap::{Parser, Subcommand};
 use crate::errors::Result;
