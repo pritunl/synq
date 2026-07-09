@@ -29,6 +29,7 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum Command {
     Daemon,
+    Configure,
     ListDevices,
     DetectDevices,
     GenerateKey,
