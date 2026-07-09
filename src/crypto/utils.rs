@@ -34,6 +34,11 @@ pub(super) fn decode_public_key(b64: &str) -> Result<PublicKey> {
     Ok(PublicKey::from(bytes))
 }
 
+pub fn validate_public_key(b64: &str) -> Result<()> {
+    decode_public_key(b64)?;
+    Ok(())
+}
+
 pub fn secret_key_to_public_key(b64: &str) -> Result<String> {
     let bytes = STANDARD_NO_PAD
         .decode(b64)
