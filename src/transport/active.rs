@@ -162,15 +162,15 @@ async fn run_active_handler(
 
         match event {
             ActiveRequestEvent::Activate => {
-                if let Some(active_peer) = active_state.get_active_peer() {
-                    if active_peer == host_public_key {
-                        trace!(
-                            peer = %host_public_key,
-                            active_peer = active_peer,
-                            "Already active, skipping activate request",
-                        );
-                        continue;
-                    }
+                if let Some(active_peer) = active_state.get_active_peer() &&
+                    active_peer == host_public_key {
+
+                    trace!(
+                        peer = %host_public_key,
+                        active_peer = active_peer,
+                        "Already active, skipping activate request",
+                    );
+                    continue;
                 }
 
                 trace!(
@@ -194,15 +194,15 @@ async fn run_active_handler(
                 }
             }
             ActiveRequestEvent::Deactivate => {
-                if let Some(active_peer) = active_state.get_active_peer() {
-                    if active_peer != host_public_key {
-                        trace!(
-                            peer = %host_public_key,
-                            active_peer = active_peer,
-                            "Not active, skipping deactivate request",
-                        );
-                        continue;
-                    }
+                if let Some(active_peer) = active_state.get_active_peer() &&
+                    active_peer != host_public_key {
+
+                    trace!(
+                        peer = %host_public_key,
+                        active_peer = active_peer,
+                        "Not active, skipping deactivate request",
+                    );
+                    continue;
                 }
 
                 trace!(
