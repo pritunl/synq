@@ -50,7 +50,7 @@ impl ServerConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PeerConfig {
     pub address: String,
     pub public_key: String,
