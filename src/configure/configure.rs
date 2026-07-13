@@ -143,6 +143,7 @@ pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
 
     let discovered = broadcast::start_discovery(
         broadcast_addr,
+        bind_port,
         announce,
         config.server.public_key.clone(),
     )?;
