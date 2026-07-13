@@ -14,6 +14,10 @@ pub(crate) fn interrupted() -> bool {
     INTERRUPTED.load(Ordering::SeqCst)
 }
 
+pub(crate) fn is_root() -> bool {
+    unsafe { libc::geteuid() == 0 }
+}
+
 pub(crate) fn ensure_port(address: &str, port: u16) -> String {
     if let Some(host) = address.strip_prefix('[') {
         if host.contains("]:") {
