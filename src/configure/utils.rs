@@ -1,4 +1,3 @@
-use std::ffi::CStr;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -39,17 +38,4 @@ pub(crate) fn print_host_prompt() -> Result<()> {
         Error::wrap(e, ErrorKind::Write)
             .with_msg("configure: Failed to flush stdout")
     })
-}
-
-pub(crate) fn get_hostname() -> Result<String> {
-    let mut buf = [0 as libc::c_char; 256];
-    let ret = unsafe { libc::gethostname(buf.as_mut_ptr(), buf.len()) };
-    if ret != 0 {
-        return Err(Error::wrap(io::Error::last_os_error(), ErrorKind::Read)
-            .with_msg("configure: Failed to get hostname"));
-    }
-    buf[buf.len() - 1] = 0;
-
-    let hostname = unsafe { CStr::from_ptr(buf.as_ptr()) };
-    Ok(hostname.to_string_lossy().into_owned())
 }
