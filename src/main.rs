@@ -29,7 +29,10 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum Command {
     Daemon,
-    Configure,
+    Configure {
+        #[arg(long)]
+        scroll: bool,
+    },
     ListDevices,
     DetectDevices,
     GenerateKey,
@@ -59,14 +62,14 @@ async fn main() -> Result<()> {
 
                 daemon::run(config).await?;
             }
-            Command::Configure => {
+            Command::Configure { scroll } => {
                 let config_path = get_config_path()?;
                 let config = Config::load_or_create(&config_path).await?;
                 if config.is_modified() {
                     config.save().await?;
                 }
 
-                configure::configure(config).await?;
+                configure::configure(config, scroll).await?;
             }
             Command::ListDevices => {
                 let devices = scroll::list_devices()?;
