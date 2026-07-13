@@ -50,7 +50,7 @@ impl ServerConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerConfig {
     pub address: String,
     pub public_key: String,
@@ -62,6 +62,19 @@ pub struct PeerConfig {
     pub scroll_source: bool,
     #[serde(default)]
     pub scroll_destination: bool,
+}
+
+impl Default for PeerConfig {
+    fn default() -> Self {
+        Self {
+            address: String::new(),
+            public_key: String::new(),
+            clipboard_source: true,
+            clipboard_destination: true,
+            scroll_source: false,
+            scroll_destination: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
