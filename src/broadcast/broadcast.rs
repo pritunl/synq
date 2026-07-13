@@ -13,8 +13,7 @@ use crate::errors::error;
 use crate::errors::{Error, ErrorKind, Result};
 
 use super::constants::{
-    BROADCAST_INTERVAL, BROADCAST_PORT, BROADCAST_PREFIX,
-    EXCHANGE_TIMEOUT,
+    BROADCAST_INTERVAL, BROADCAST_PREFIX, EXCHANGE_TIMEOUT,
 };
 
 #[derive(Debug, Clone)]
@@ -214,16 +213,17 @@ fn resolve_target(address: &str) -> Result<SocketAddr> {
 
 pub fn start_discovery(
     broadcast_addr: Ipv4Addr,
+    port: u16,
     address: String,
     public_key: String,
 ) -> Result<mpsc::Receiver<DiscoveredHost>> {
-    let target = SocketAddrV4::new(broadcast_addr, BROADCAST_PORT);
+    let target = SocketAddrV4::new(broadcast_addr, port);
 
-    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, BROADCAST_PORT))
+    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, port))
         .map_err(|e| {
             Error::wrap(e, ErrorKind::Network)
                 .with_msg("broadcast: Failed to bind socket")
-                .with_ctx("port", BROADCAST_PORT)
+                .with_ctx("port", port)
         })?;
     socket.set_broadcast(true).map_err(|e| {
         Error::wrap(e, ErrorKind::Network)
