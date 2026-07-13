@@ -16,13 +16,15 @@ use super::utils::{
     INTERRUPTED,
     handle_interrupt,
     interrupted,
+    is_root,
     ensure_port,
     print_host_prompt,
     get_hostname,
 };
 
-pub async fn configure(mut config: Config) -> Result<()> {
+pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
     let prompt = Prompt::start();
+    let scroll_allowed = scroll || is_root();
 
     let default_address = if config.server.address.is_empty() {
         get_hostname()?
@@ -42,22 +44,29 @@ pub async fn configure(mut config: Config) -> Result<()> {
         prompt.yes_no_default("Enable clipboard source", true)?;
     config.server.clipboard_destination =
         prompt.yes_no_default("Enable clipboard destination", true)?;
-    config.server.scroll_destination =
-        prompt.yes_no_default("Enable scroll destination", false)?;
-    config.server.scroll_source = if config.server.scroll_destination {
-        println!("Skipping scroll source, scroll destination is enabled");
-        false
+    if scroll_allowed {
+        config.server.scroll_destination =
+            prompt.yes_no_default("Enable scroll destination", false)?;
+        config.server.scroll_source = if config.server.scroll_destination {
+            println!("Skipping scroll source, scroll destination is enabled");
+            false
+        } else {
+            prompt.yes_no_default("Enable scroll source", false)?
+        };
     } else {
-        prompt.yes_no_default("Enable scroll source", false)?
-    };
+        println!("Skipping scroll configuration, not running as root, \
+            use --scroll to override");
+    }
 
-    if config.server.scroll_source || config.server.scroll_destination {
+    if scroll_allowed &&
+        (config.server.scroll_source || config.server.scroll_destination)
+    {
         println!();
         println!("Scroll on each device to detect it, press Enter when done");
         let detected = scroll::detect_devices_interactive(&prompt.lines)?;
 
         let mut devices = Vec::new();
-        for name in detected {
+        for name in &detected {
             let keep = if config.server.scroll_source {
                 prompt.yes_no(&format!("Send scroll events from {}", name))?
             } else {
@@ -66,11 +75,28 @@ pub async fn configure(mut config: Config) -> Result<()> {
 
             if keep {
                 devices.push(InputDevice {
-                    name: Some(name),
+                    name: Some(name.clone()),
                     ..Default::default()
                 });
             }
         }
+
+        let existing = std::mem::take(&mut config.server.scroll_input_devices);
+        for device in existing {
+            let prompted = device.name.as_ref()
+                .is_some_and(|name| detected.contains(name));
+            if prompted {
+                continue;
+            }
+
+            let name = device.name.as_deref()
+                .or(device.path.as_deref())
+                .unwrap_or("unknown");
+            if prompt.yes_no(&format!("Keep scroll device {}", name))? {
+                devices.push(device);
+            }
+        }
+
         config.server.scroll_input_devices = devices;
     }
 
@@ -123,7 +149,12 @@ pub async fn configure(mut config: Config) -> Result<()> {
 
     println!("Broadcasting, listening for hosts...");
     let new_peers = add_hosts(
-        &prompt, &discovered, &config.server.public_key, bind_port)?;
+        &prompt,
+        &discovered,
+        &config.server.public_key,
+        bind_port,
+        scroll_allowed,
+    )?;
 
     let existing = std::mem::take(&mut config.peers);
     let mut peers = Vec::new();
@@ -139,7 +170,7 @@ pub async fn configure(mut config: Config) -> Result<()> {
             continue;
         }
 
-        peers.push(prompt_peer_settings(&prompt, peer.address, peer.public_key)?);
+        peers.push(prompt_peer_settings(&prompt, peer, scroll_allowed)?);
     }
     peers.extend(new_peers);
     config.peers = peers;
@@ -155,6 +186,7 @@ fn add_hosts(
     discovered: &Receiver<DiscoveredHost>,
     own_public_key: &str,
     bind_port: u16,
+    scroll_allowed: bool,
 ) -> Result<Vec<PeerConfig>> {
     let mut peers: Vec<PeerConfig> = Vec::new();
 
@@ -171,7 +203,8 @@ fn add_hosts(
     }
 
     let result = add_hosts_loop(
-        prompt, discovered, own_public_key, bind_port, &mut peers);
+        prompt, discovered, own_public_key, bind_port, scroll_allowed,
+        &mut peers);
 
     unsafe { libc::signal(libc::SIGINT, old_handler) };
     INTERRUPTED.store(false, Ordering::SeqCst);
@@ -191,6 +224,7 @@ fn add_hosts_loop(
     discovered: &Receiver<DiscoveredHost>,
     own_public_key: &str,
     bind_port: u16,
+    scroll_allowed: bool,
     peers: &mut Vec<PeerConfig>,
 ) -> Result<()> {
     let mut seen: HashSet<String> = HashSet::new();
@@ -228,8 +262,12 @@ fn add_hosts_loop(
 
             println!("Detected host {}", host.address);
             if prompt.yes_no_default(&format!("Add host {}", host.address), true)? {
-                peers.push(prompt_peer_settings(
-                    prompt, host.address, host.public_key)?);
+                let peer = PeerConfig {
+                    address: host.address,
+                    public_key: host.public_key,
+                    ..Default::default()
+                };
+                peers.push(prompt_peer_settings(prompt, peer, scroll_allowed)?);
             }
         }
         if host_handled {
@@ -312,36 +350,37 @@ fn add_hosts_loop(
 
         seen.insert(address.clone());
         seen.insert(public_key.clone());
-        peers.push(prompt_peer_settings(prompt, address, public_key)?);
+        let peer = PeerConfig {
+            address,
+            public_key,
+            ..Default::default()
+        };
+        peers.push(prompt_peer_settings(prompt, peer, scroll_allowed)?);
         print_host_prompt()?;
     }
 }
 
 fn prompt_peer_settings(
     prompt: &Prompt,
-    address: String,
-    public_key: String,
+    mut peer: PeerConfig,
+    scroll_allowed: bool,
 ) -> Result<PeerConfig> {
-    let clipboard_source = prompt.yes_no_default(
-        &format!("{}: Enable clipboard source", address), true)?;
-    let clipboard_destination = prompt.yes_no_default(
-        &format!("{}: Enable clipboard destination", address), true)?;
-    let scroll_source = prompt.yes_no_default(
-        &format!("{}: Enable scroll source", address), false)?;
-    let scroll_destination = if scroll_source {
-        println!("Skipping scroll destination, scroll source is enabled");
-        false
-    } else {
-        prompt.yes_no_default(
-            &format!("{}: Enable scroll destination", address), false)?
-    };
+    peer.clipboard_source = prompt.yes_no_default(
+        &format!("{}: Enable clipboard source", peer.address), true)?;
+    peer.clipboard_destination = prompt.yes_no_default(
+        &format!("{}: Enable clipboard destination", peer.address), true)?;
 
-    Ok(PeerConfig {
-        address,
-        public_key,
-        clipboard_source,
-        clipboard_destination,
-        scroll_source,
-        scroll_destination,
-    })
+    if scroll_allowed {
+        peer.scroll_source = prompt.yes_no_default(
+            &format!("{}: Enable scroll source", peer.address), false)?;
+        peer.scroll_destination = if peer.scroll_source {
+            println!("Skipping scroll destination, scroll source is enabled");
+            false
+        } else {
+            prompt.yes_no_default(
+                &format!("{}: Enable scroll destination", peer.address), false)?
+        };
+    }
+
+    Ok(peer)
 }
