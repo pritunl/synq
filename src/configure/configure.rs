@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::broadcast::{self, DiscoveredHost};
 use crate::config::{Config, InputDevice, PeerConfig};
+use crate::constants::LOGO;
 use crate::crypto::validate_public_key;
 use crate::errors::error;
 use crate::errors::{Error, ErrorKind, Result};
@@ -23,6 +24,8 @@ use super::utils::{
 };
 
 pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
+    println!("{}", LOGO);
+
     let prompt = Prompt::start();
     let scroll_allowed = scroll || is_root();
 
