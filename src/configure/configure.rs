@@ -20,7 +20,6 @@ use super::utils::{
     is_root,
     ensure_port,
     print_host_prompt,
-    get_hostname,
 };
 
 pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
@@ -29,8 +28,33 @@ pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
     let prompt = Prompt::start();
     let scroll_allowed = scroll || is_root();
 
+    let interfaces = broadcast::list_interfaces()?;
+    if interfaces.is_empty() {
+        return Err(Error::new(ErrorKind::Network)
+            .with_msg("configure: No network interfaces found"));
+    }
+
+    println!("Network interfaces:");
+    for interface in &interfaces {
+        println!("  {}", interface);
+    }
+
+    let default_interface = broadcast::default_interface(&interfaces);
+    let interface = loop {
+        let name = match &default_interface {
+            Some(default) => prompt.line_default(
+                "Enter interface name for broadcast", default)?,
+            None => prompt.line("Enter interface name for broadcast: ")?,
+        };
+
+        match interfaces.iter().find(|i| i.name == name) {
+            Some(interface) => break interface.clone(),
+            None => println!("Unknown interface {}", name),
+        }
+    };
+
     let default_address = if config.server.address.is_empty() {
-        get_hostname()?
+        interface.address.to_string()
     } else {
         config.server.address.clone()
     };
@@ -107,31 +131,6 @@ pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
     let bind_port = config.server.bind_port()?;
     let announce = ensure_port(&config.server.address, bind_port);
 
-    let interfaces = broadcast::list_interfaces()?;
-    if interfaces.is_empty() {
-        return Err(Error::new(ErrorKind::Network)
-            .with_msg("configure: No network interfaces found"));
-    }
-
-    println!("Network interfaces:");
-    for interface in &interfaces {
-        println!("  {}", interface);
-    }
-
-    let default_interface = broadcast::default_interface(&interfaces);
-    let broadcast_addr = loop {
-        let name = match &default_interface {
-            Some(default) => prompt.line_default(
-                "Enter interface name for broadcast", default)?,
-            None => prompt.line("Enter interface name for broadcast: ")?,
-        };
-
-        match interfaces.iter().find(|i| i.name == name) {
-            Some(interface) => break interface.broadcast,
-            None => println!("Unknown interface {}", name),
-        }
-    };
-
     if let Err(e) = broadcast::start_key_listener(
         &config.server.bind,
         announce.clone(),
@@ -145,7 +144,7 @@ pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
     }
 
     let discovered = broadcast::start_discovery(
-        broadcast_addr,
+        interface.broadcast,
         bind_port,
         announce,
         config.server.public_key.clone(),
