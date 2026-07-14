@@ -74,17 +74,6 @@ impl Prompt {
         }
     }
 
-    pub(crate) fn yes_no(&self, prompt: &str) -> Result<bool> {
-        loop {
-            let line = self.line(&format!("{} [y/n]: ", prompt))?.to_lowercase();
-            match line.as_str() {
-                "y" | "yes" => return Ok(true),
-                "n" | "no" => return Ok(false),
-                _ => println!("Enter y or n"),
-            }
-        }
-    }
-
     pub(crate) fn yes_no_default(&self, prompt: &str, default: bool) -> Result<bool> {
         let hint = if default { "Y/n" } else { "y/N" };
         loop {
