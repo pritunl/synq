@@ -67,18 +67,19 @@ pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
     }
     config.server.address = address;
 
-    config.server.clipboard_source =
-        prompt.yes_no_default("Enable clipboard source", true)?;
-    config.server.clipboard_destination =
-        prompt.yes_no_default("Enable clipboard destination", true)?;
+    config.server.clipboard_source = prompt.yes_no_default(
+        "Enable clipboard source", config.server.clipboard_source)?;
+    config.server.clipboard_destination = prompt.yes_no_default(
+        "Enable clipboard destination", config.server.clipboard_destination)?;
     if scroll_allowed {
-        config.server.scroll_destination =
-            prompt.yes_no_default("Enable scroll destination", false)?;
+        config.server.scroll_destination = prompt.yes_no_default(
+            "Enable scroll destination", config.server.scroll_destination)?;
         config.server.scroll_source = if config.server.scroll_destination {
             println!("Skipping scroll source, scroll destination is enabled");
             false
         } else {
-            prompt.yes_no_default("Enable scroll source", false)?
+            prompt.yes_no_default(
+                "Enable scroll source", config.server.scroll_source)?
         };
     } else {
         println!("Skipping scroll configuration, not running as root, \
@@ -92,23 +93,29 @@ pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
         println!("Scroll on each device to detect it, press Enter when done");
         let detected = scroll::detect_devices_interactive(&prompt.lines)?;
 
+        let existing = std::mem::take(&mut config.server.scroll_input_devices);
         let mut devices = Vec::new();
         for name in &detected {
             let keep = if config.server.scroll_source {
-                prompt.yes_no(&format!("Send scroll events from {}", name))?
+                prompt.yes_no_default(
+                    &format!("Send scroll events from {}", name), true)?
             } else {
-                prompt.yes_no(&format!("Block scroll events from {}", name))?
+                prompt.yes_no_default(
+                    &format!("Block scroll events from {}", name), true)?
             };
 
             if keep {
-                devices.push(InputDevice {
-                    name: Some(name.clone()),
-                    ..Default::default()
-                });
+                let device = existing.iter()
+                    .find(|d| d.name.as_deref() == Some(name.as_str()))
+                    .cloned()
+                    .unwrap_or_else(|| InputDevice {
+                        name: Some(name.clone()),
+                        ..Default::default()
+                    });
+                devices.push(device);
             }
         }
 
-        let existing = std::mem::take(&mut config.server.scroll_input_devices);
         for device in existing {
             let prompted = device.name.as_ref()
                 .is_some_and(|name| detected.contains(name));
@@ -119,7 +126,9 @@ pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
             let name = device.name.as_deref()
                 .or(device.path.as_deref())
                 .unwrap_or("unknown");
-            if prompt.yes_no(&format!("Keep scroll device {}", name))? {
+            if prompt.yes_no_default(
+                &format!("Keep scroll device {}", name), true)?
+            {
                 devices.push(device);
             }
         }
@@ -169,7 +178,7 @@ pub async fn configure(mut config: Config, scroll: bool) -> Result<()> {
             continue;
         }
 
-        if !prompt.yes_no(&format!("Keep host {}", peer.address))? {
+        if !prompt.yes_no_default(&format!("Keep host {}", peer.address), true)? {
             continue;
         }
 
@@ -369,19 +378,23 @@ fn prompt_peer_settings(
     scroll_allowed: bool,
 ) -> Result<PeerConfig> {
     peer.clipboard_source = prompt.yes_no_default(
-        &format!("{}: Enable clipboard source", peer.address), true)?;
+        &format!("{}: Enable clipboard source", peer.address),
+        peer.clipboard_source)?;
     peer.clipboard_destination = prompt.yes_no_default(
-        &format!("{}: Enable clipboard destination", peer.address), true)?;
+        &format!("{}: Enable clipboard destination", peer.address),
+        peer.clipboard_destination)?;
 
     if scroll_allowed {
         peer.scroll_source = prompt.yes_no_default(
-            &format!("{}: Enable scroll source", peer.address), false)?;
+            &format!("{}: Enable scroll source", peer.address),
+            peer.scroll_source)?;
         peer.scroll_destination = if peer.scroll_source {
             println!("Skipping scroll destination, scroll source is enabled");
             false
         } else {
             prompt.yes_no_default(
-                &format!("{}: Enable scroll destination", peer.address), false)?
+                &format!("{}: Enable scroll destination", peer.address),
+                peer.scroll_destination)?
         };
     }
 
