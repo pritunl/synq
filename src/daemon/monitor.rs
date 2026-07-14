@@ -4,7 +4,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{AsRawFd, OwnedFd};
 use std::path::Path;
 
-use input::{Libinput, LibinputInterface, Event as LibinputEvent};
+use input::{DeviceCapability, Libinput, LibinputInterface, Event as LibinputEvent};
 use input::event::{DeviceEvent, EventTrait};
 use libc::{O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY};
 use tokio_util::sync::CancellationToken;
@@ -109,6 +109,10 @@ pub(crate) fn run_scroll_source_monitor(
                     let name = device.name().to_string();
                     let path = format!("/dev/input/{}", device.sysname());
 
+                    if !device.has_capability(DeviceCapability::Pointer) {
+                        continue;
+                    }
+
                     if let Some(config) = matches_config(&name) {
                         if active_receivers.contains_key(&name) {
                             continue;
@@ -144,6 +148,10 @@ pub(crate) fn run_scroll_source_monitor(
                 LibinputEvent::Device(DeviceEvent::Removed(evt)) => {
                     let device = evt.device();
                     let name = device.name().to_string();
+
+                    if !device.has_capability(DeviceCapability::Pointer) {
+                        continue;
+                    }
 
                     if let Some(receiver) = active_receivers.remove(&name) {
                         info!("Scroll device disconnected: {}", name);
