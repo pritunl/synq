@@ -20,9 +20,9 @@ the host over gRPC and replayed on the guest.
 ## Install from Source
 
 ```bash
-sudo dnf -y install rust cargo rust-std-static systemd-devel libinput-devel
+sudo dnf -y install git rust cargo rust-std-static systemd-devel libinput-devel
 
-cargo install synq
+cargo install --git https://github.com/pritunl/synq.git
 
 # Install without scroll support
 sudo install -m 0755 "$HOME/.cargo/bin/synq" /usr/bin/synq
