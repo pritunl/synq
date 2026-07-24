@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use tokio::sync::mpsc;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, sleep_until, Duration, Instant};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
@@ -19,6 +19,7 @@ use super::active::ActiveState;
 
 const CHANNEL_CAPACITY: usize = 32;
 const RECONNECT_DELAY_MS: u64 = 1000;
+const SEND_DELAY_MS: u64 = 1;
 
 const STATE_DISCONNECTED: u8 = 0;
 const STATE_CONNECTING: u8 = 1;
@@ -36,7 +37,7 @@ impl ScrollTransport {
         peers: &[PeerConfig],
         active_state: ActiveState,
         cancel: CancellationToken,
-    ) -> (mpsc::Sender<ScrollEvent>, Vec<(String, Arc<AtomicU8>)>) {
+    ) -> (mpsc::Sender<(Instant, ScrollEvent)>, Vec<(String, Arc<AtomicU8>)>) {
         let scroll_peers: Vec<_> = peers.iter()
             .filter(|p| p.scroll_destination)
             .collect();
@@ -46,7 +47,8 @@ impl ScrollTransport {
             return (tx, Vec::new());
         }
 
-        let (main_tx, mut main_rx) = mpsc::channel::<ScrollEvent>(CHANNEL_CAPACITY);
+        let (main_tx, mut main_rx) =
+            mpsc::channel::<(Instant, ScrollEvent)>(CHANNEL_CAPACITY);
 
         let mut peer_infos: Vec<PeerInfo> = Vec::with_capacity(scroll_peers.len());
         let mut peer_states = Vec::with_capacity(scroll_peers.len());
@@ -78,7 +80,7 @@ impl ScrollTransport {
 
             async move {
                 loop {
-                    let event = tokio::select! {
+                    let (created, event) = tokio::select! {
                         _ = cancel.cancelled() => break,
                         result = main_rx.recv() => {
                             match result {
@@ -87,6 +89,12 @@ impl ScrollTransport {
                             }
                         }
                     };
+
+                    tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        _ = sleep_until(
+                            created + Duration::from_millis(SEND_DELAY_MS)) => {}
+                    }
 
                     let Some(active_peer) = active_state.get_active_peer() else {
                         continue;
