@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use tokio::sync::{mpsc, RwLock};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::errors::{error, info, warn};
@@ -43,7 +44,7 @@ impl TransportStatus {
 
 #[derive(Clone)]
 pub struct Transport {
-    scroll_tx: mpsc::Sender<ScrollEvent>,
+    scroll_tx: mpsc::Sender<(Instant, ScrollEvent)>,
     clipboard_tx: mpsc::Sender<ClipboardSendEvent>,
     active_tx: mpsc::Sender<ActiveRequestEvent>,
     pub active_state: ActiveState,
@@ -145,7 +146,7 @@ impl Transport {
     }
 
     pub fn send_scroll(&self, event: ScrollEvent) -> bool {
-        if let Err(e) = self.scroll_tx.try_send(event) {
+        if let Err(e) = self.scroll_tx.try_send((Instant::now(), event)) {
             warn!("transport: Dropped scroll event: {}", e);
             return false;
         }
