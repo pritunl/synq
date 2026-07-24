@@ -1,7 +1,7 @@
 use std::mem;
 use std::ptr;
 
-use crate::errors::{Result, trace};
+use crate::errors::{Result, trace, info};
 use crate::transport::{Transport};
 use crate::utils;
 
@@ -134,12 +134,16 @@ impl ScrollSender {
         if last_scroll > 0 && now - last_scroll > SCROLL_TTL {
             let last_blur = self.transport.active_state.get_last_blur();
             if last_blur == 0 {
+                trace!("Scroll blur");
                 self.transport.active_state.set_last_blur(now);
             } else if now - last_blur > BLUR_TTL {
                 if self.transport.active_state.is_host_active() {
                     self.transport.send_deactivate_request();
                 }
+                info!("Scroll ignore");
                 return Ok(());
+            } else {
+                trace!("Scroll skip");
             }
         } else {
             self.transport.active_state.set_last_blur(0);
