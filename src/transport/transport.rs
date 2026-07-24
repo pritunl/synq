@@ -118,6 +118,7 @@ impl Transport {
 
         let (scroll_tx, peer_states) = ScrollTransport::start(
             &config.peers,
+            config.server.send_delay,
             active_state.clone(),
             cancel.clone(),
         );
