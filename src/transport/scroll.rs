@@ -19,7 +19,6 @@ use super::active::ActiveState;
 
 const CHANNEL_CAPACITY: usize = 32;
 const RECONNECT_DELAY_MS: u64 = 1000;
-const SEND_DELAY_MS: u64 = 1;
 
 const STATE_DISCONNECTED: u8 = 0;
 const STATE_CONNECTING: u8 = 1;
@@ -35,6 +34,7 @@ struct PeerInfo {
 impl ScrollTransport {
     pub fn start(
         peers: &[PeerConfig],
+        send_delay: u64,
         active_state: ActiveState,
         cancel: CancellationToken,
     ) -> (mpsc::Sender<(Instant, ScrollEvent)>, Vec<(String, Arc<AtomicU8>)>) {
@@ -77,6 +77,7 @@ impl ScrollTransport {
 
         tokio::spawn({
             let cancel = cancel.clone();
+            let send_delay = Duration::from_millis(send_delay);
 
             async move {
                 loop {
@@ -90,10 +91,11 @@ impl ScrollTransport {
                         }
                     };
 
-                    tokio::select! {
-                        _ = cancel.cancelled() => break,
-                        _ = sleep_until(
-                            created + Duration::from_millis(SEND_DELAY_MS)) => {}
+                    if !send_delay.is_zero() {
+                        tokio::select! {
+                            _ = cancel.cancelled() => break,
+                            _ = sleep_until(created + send_delay) => {}
+                        }
                     }
 
                     let Some(active_peer) = active_state.get_active_peer() else {
