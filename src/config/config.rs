@@ -36,6 +36,8 @@ pub struct ServerConfig {
     pub scroll_destination: bool,
     #[serde(default)]
     pub scroll_input_devices: Vec<InputDevice>,
+    #[serde(default = "default_send_delay")]
+    pub send_delay: u64,
 }
 
 impl ServerConfig {
@@ -108,6 +110,10 @@ const fn default_scroll_modifier() -> f64 {
     1.0
 }
 
+const fn default_send_delay() -> u64 {
+    1
+}
+
 impl Config {
     pub async fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
@@ -167,6 +173,7 @@ impl Config {
                 scroll_source: false,
                 scroll_destination: false,
                 scroll_input_devices: Vec::new(),
+                send_delay: default_send_delay(),
             },
             peers: Vec::new(),
         };
