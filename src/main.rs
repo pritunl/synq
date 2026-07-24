@@ -41,12 +41,18 @@ enum Command {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
+    let args = Args::parse();
+
+    let log_level = if args.debug {
+        tracing::Level::TRACE
+    } else {
+        tracing::Level::INFO
+    };
     tracing_subscriber::fmt()
         .with_target(false)
+        .with_max_level(log_level)
         .compact()
         .init();
-
-    let args = Args::parse();
 
     if args.debug {
         errors::set_debug_output(true);
