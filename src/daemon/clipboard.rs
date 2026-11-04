@@ -31,7 +31,15 @@ pub(crate) async fn run_clipboard_source(
             _ = cancel.cancelled() => break,
             change = clipboard_rx.recv() => {
                 if change.is_none() {
-                    break;
+                    if cancel.is_cancelled() {
+                        break;
+                    }
+
+                    // Exit so the service manager restarts instead of running without sharing
+                    let e = Error::new(ErrorKind::Exec)
+                        .with_msg("daemon: Clipboard watcher stopped unexpectedly");
+                    error(&e);
+                    std::process::exit(1);
                 }
             }
         };
