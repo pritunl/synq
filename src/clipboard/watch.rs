@@ -140,6 +140,15 @@ impl XlibState {
 }
 
 pub async fn watch_clipboard() -> Result<mpsc::Receiver<ClipboardChange>> {
+    // Never fall back to the focus limited Xwayland clipboard on a Wayland session
+    if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|value| !value.is_empty()) {
+        return super::wayland::watch_wayland_clipboard().await;
+    }
+
+    watch_x11_clipboard().await
+}
+
+async fn watch_x11_clipboard() -> Result<mpsc::Receiver<ClipboardChange>> {
     let (tx, rx) = mpsc::channel(32);
     let (init_tx, mut init_rx) = mpsc::channel::<Result<()>>(1);
 

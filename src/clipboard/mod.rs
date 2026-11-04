@@ -3,3 +3,4 @@ mod clipboard;
 pub use clipboard::*;
 mod watch;
 pub use watch::*;
+mod wayland;
