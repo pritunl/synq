@@ -60,9 +60,10 @@ pub(crate) fn run_scroll_source_monitor(
     let cancel = transport.cancel_token();
     let input_devices = config.server.scroll_input_devices.clone();
 
-    let matches_config = |name: &str| -> Option<&InputDevice> {
+    let matches_config = |name: &str, path: &str| -> Option<&InputDevice> {
         input_devices.iter().find(|d| {
-            d.name.as_ref().is_some_and(|n| n.eq_ignore_ascii_case(name))
+            d.path.as_deref() == Some(path)
+                || d.name.as_ref().is_some_and(|n| n.eq_ignore_ascii_case(name))
         })
     };
 
@@ -106,15 +107,15 @@ pub(crate) fn run_scroll_source_monitor(
             match event {
                 LibinputEvent::Device(DeviceEvent::Added(evt)) => {
                     let device = evt.device();
-                    let name = device.name().to_string();
+                    let name = device.name();
                     let path = format!("/dev/input/{}", device.sysname());
 
                     if !device.has_capability(DeviceCapability::Pointer) {
                         continue;
                     }
 
-                    if let Some(config) = matches_config(&name) {
-                        if active_receivers.contains_key(&name) {
+                    if let Some(config) = matches_config(name, &path) {
+                        if active_receivers.contains_key(&path) {
                             continue;
                         }
 
@@ -140,21 +141,21 @@ pub(crate) fn run_scroll_source_monitor(
                             }
                         });
 
-                        active_receivers.insert(name, ActiveReceiver {
+                        active_receivers.insert(path, ActiveReceiver {
                             cancel,
                         });
                     }
                 }
                 LibinputEvent::Device(DeviceEvent::Removed(evt)) => {
                     let device = evt.device();
-                    let name = device.name().to_string();
+                    let path = format!("/dev/input/{}", device.sysname());
 
                     if !device.has_capability(DeviceCapability::Pointer) {
                         continue;
                     }
 
-                    if let Some(receiver) = active_receivers.remove(&name) {
-                        info!("Scroll device disconnected: {}", name);
+                    if let Some(receiver) = active_receivers.remove(&path) {
+                        info!("Scroll device disconnected: {} ({})", device.name(), path);
                         receiver.cancel.cancel();
                     }
                 }

@@ -1,8 +1,8 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use tokio_stream::StreamExt;
 use tonic::{
+    transport::server::TcpIncoming,
     transport::Server as TonicServer,
     Request,
     Response,
@@ -16,18 +16,18 @@ use crate::config::Config;
 use crate::crypto;
 use crate::crypto::KeyStore;
 use crate::clipboard;
-use crate::utils;
 use crate::synq::{
     synq_service_server::{SynqService, SynqServiceServer},
     ScrollEvent, ClipboardEvent, ActiveEvent, ActivateEvent, Empty,
 };
 
 use super::active::{ActiveState, send_active_state};
+use super::clipboard::ReceivedClipboards;
 
 pub struct TransportServer {
     config: Config,
     key_store: Arc<KeyStore>,
-    last_set_clipboard: Arc<AtomicU64>,
+    received_clipboards: Arc<ReceivedClipboards>,
     scroll_inject_tx: Option<std::sync::mpsc::SyncSender<ScrollEvent>>,
     active_state: ActiveState,
 }
@@ -92,7 +92,7 @@ impl SynqService for TransportServer {
         let event = request.into_inner();
 
         if let Err(e) = handle_clipboard_event(
-            &self.config, &self.key_store, &self.last_set_clipboard, event,
+            &self.config, &self.key_store, &self.received_clipboards, event,
         ).await {
             error(&e);
             return Err(Status::internal("failed to handle clipboard event"));
@@ -205,7 +205,7 @@ impl SynqService for TransportServer {
 async fn handle_clipboard_event(
     config: &Config,
     key_store: &KeyStore,
-    last_set_clipboard: &AtomicU64,
+    received_clipboards: &ReceivedClipboards,
     event: ClipboardEvent,
 ) -> Result<()> {
     let peer = config.peers.iter()
@@ -236,7 +236,7 @@ async fn handle_clipboard_event(
 
     trace!("Received clipboard from peer {}", peer.address);
 
-    last_set_clipboard.store(utils::mono_time_ms(), Ordering::SeqCst);
+    received_clipboards.record(&plaintext);
     clipboard::set_clipboard(plaintext);
 
     Ok(())
@@ -246,29 +246,36 @@ impl TransportServer {
     pub fn new(
         config: Config,
         key_store: Arc<KeyStore>,
-        last_set_clipboard: Arc<AtomicU64>,
+        received_clipboards: Arc<ReceivedClipboards>,
         scroll_inject_tx: Option<std::sync::mpsc::SyncSender<ScrollEvent>>,
         active_state: ActiveState,
     ) -> Self {
         Self {
             config,
             key_store,
-            last_set_clipboard,
+            received_clipboards,
             scroll_inject_tx,
             active_state,
         }
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub fn bind(&self) -> Result<TcpIncoming> {
         let addr = self.config.server.bind.parse()
             .map_err(|e| Error::wrap(e, ErrorKind::Parse)
                 .with_msg("transport: Failed to parse bind address"))?;
 
-        crate::errors::info!("Transport server listening on {}", addr);
+        let listener = TcpIncoming::bind(addr)
+            .map_err(|e| Error::wrap(e, ErrorKind::Network)
+                .with_msg("transport: Failed to bind server")
+                .with_ctx("address", addr))?;
+        crate::errors::info!("Transport server listening on {}", listener.local_addr().unwrap_or(addr));
+        Ok(listener.with_nodelay(Some(true)))
+    }
 
+    pub async fn run(self, listener: TcpIncoming) -> Result<()> {
         TonicServer::builder()
             .add_service(SynqServiceServer::new(self))
-            .serve(addr)
+            .serve_with_incoming(listener)
             .await
             .map_err(|e| Error::wrap(e, ErrorKind::Network)
                 .with_msg("transport: Server failed"))?;

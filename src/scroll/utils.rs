@@ -251,8 +251,14 @@ pub(crate) fn setup_uinput_merged(source_fd: RawFd) -> Result<File> {
         setup.id = SCROLL_DEVICE_ID;
         setup.name[..SCROLL_DEVICE_NAME.len()].copy_from_slice(SCROLL_DEVICE_NAME);
 
-        libc::ioctl(ufd, UI_DEV_SETUP, &setup);
-        libc::ioctl(ufd, UI_DEV_CREATE, 0);
+        if libc::ioctl(ufd, UI_DEV_SETUP, &setup) < 0 {
+            return Err(Error::wrap(std::io::Error::last_os_error(), ErrorKind::Exec)
+                .with_msg("scroll: Failed to configure the uinput device"));
+        }
+        if libc::ioctl(ufd, UI_DEV_CREATE, 0) < 0 {
+            return Err(Error::wrap(std::io::Error::last_os_error(), ErrorKind::Exec)
+                .with_msg("scroll: Failed to create the uinput device"));
+        }
     }
 
     std::thread::sleep(std::time::Duration::from_millis(200));

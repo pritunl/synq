@@ -61,6 +61,11 @@ impl ScrollReceiver {
     }
 
     pub fn read_event(&mut self) -> Result<Option<ScrollEvent>> {
+        // A single dispatch can queue several events, even after the fd stops being readable.
+        if let Some(event) = self.next_scroll_event() {
+            return Ok(Some(event));
+        }
+
         let mut pfd = libc::pollfd {
             fd: self.libinput.as_raw_fd(),
             events: libc::POLLIN,
@@ -80,6 +85,10 @@ impl ScrollReceiver {
                 .with_msg("scroll: Failed to dispatch libinput events")
         })?;
 
+        Ok(self.next_scroll_event())
+    }
+
+    fn next_scroll_event(&mut self) -> Option<ScrollEvent> {
         for event in &mut self.libinput {
             if let Event::Pointer(pointer_event) = event {
                 match pointer_event {
@@ -102,11 +111,11 @@ impl ScrollReceiver {
                             "Scroll event"
                         );
 
-                        return Ok(Some(ScrollEvent {
+                        return Some(ScrollEvent {
                             source: ScrollSource::Wheel,
                             delta_x,
                             delta_y,
-                        }));
+                        });
                     }
                     PointerEvent::ScrollFinger(finger_event) => {
                         let delta_x = if finger_event.has_axis(Axis::Horizontal) {
@@ -127,11 +136,11 @@ impl ScrollReceiver {
                             "Scroll event",
                         );
 
-                        return Ok(Some(ScrollEvent {
+                        return Some(ScrollEvent {
                             source: ScrollSource::Finger,
                             delta_x,
                             delta_y,
-                        }));
+                        });
                     }
                     PointerEvent::ScrollContinuous(continuous_event) => {
                         let delta_x = if continuous_event.has_axis(Axis::Horizontal) {
@@ -152,17 +161,17 @@ impl ScrollReceiver {
                             "Scroll event"
                         );
 
-                        return Ok(Some(ScrollEvent {
+                        return Some(ScrollEvent {
                             source: ScrollSource::Continuous,
                             delta_x,
                             delta_y,
-                        }));
+                        });
                     }
                     _ => {}
                 }
             }
         }
 
-        Ok(None)
+        None
     }
 }

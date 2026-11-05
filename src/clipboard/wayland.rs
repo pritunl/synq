@@ -249,7 +249,7 @@ impl WaylandWatcher {
             return Ok(None);
         };
 
-        // First seat, same as arboard
+        // Watch the first advertised seat.
         let seat: wl_seat::WlSeat = globals.bind(&qh, 1..=2, ())
             .map_err(|e| Error::wrap(e, ErrorKind::NotFound)
                 .with_msg("clipboard: No Wayland seat available"))?;

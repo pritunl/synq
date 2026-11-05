@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::hash::{BuildHasher, RandomState};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
 use tonic::transport::Channel;
@@ -16,6 +19,35 @@ pub struct ClipboardSendEvent {
     pub peer_address: String,
     pub peer_public_key: String,
     pub text: String,
+}
+
+const ECHO_WINDOW: Duration = Duration::from_secs(1);
+const MAX_RECENT_CLIPBOARDS: usize = 256;
+
+#[derive(Default)]
+pub(super) struct ReceivedClipboards {
+    // A process-local keyed hash lets us recognize echoes without keeping clipboard text.
+    hasher: RandomState,
+    entries: Mutex<VecDeque<(Instant, u64)>>,
+}
+
+impl ReceivedClipboards {
+    pub(super) fn record(&self, text: &str) {
+        let hash = self.hasher.hash_one(text);
+        let mut entries = self.entries.lock().unwrap();
+        let now = Instant::now();
+        entries.retain(|&(at, previous)| now.duration_since(at) < ECHO_WINDOW && previous != hash);
+        if entries.len() == MAX_RECENT_CLIPBOARDS {
+            entries.pop_front();
+        }
+        entries.push_back((now, hash));
+    }
+
+    pub(super) fn contains(&self, text: &str) -> bool {
+        let hash = self.hasher.hash_one(text);
+        let entries = self.entries.lock().unwrap();
+        entries.iter().any(|&(at, previous)| previous == hash && at.elapsed() < ECHO_WINDOW)
+    }
 }
 
 pub struct ClipboardTransport;

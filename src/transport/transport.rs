@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Mutex;
 
 use tokio::sync::{mpsc, RwLock};
@@ -14,7 +14,7 @@ use crate::synq::ScrollEvent;
 
 use super::server::TransportServer;
 use super::scroll::ScrollTransport;
-use super::clipboard::{ClipboardTransport, ClipboardSendEvent};
+use super::clipboard::{ClipboardTransport, ClipboardSendEvent, ReceivedClipboards};
 use super::active::{ActiveState, ActiveTransport, ActiveRequestEvent};
 
 const SCROLL_INJECT_CAPACITY: usize = 32;
@@ -50,7 +50,7 @@ pub struct Transport {
     pub active_state: ActiveState,
     #[allow(dead_code)]
     status: Arc<TransportStatus>,
-    last_set_clipboard: Arc<AtomicU64>,
+    received_clipboards: Arc<ReceivedClipboards>,
     cancel: CancellationToken,
     scroll_inject_rx: Arc<Mutex<Option<ScrollInjectRx>>>,
 }
@@ -72,7 +72,7 @@ impl Transport {
     ) -> Result<Self> {
         let cancel = CancellationToken::new();
         let status = Arc::new(TransportStatus::new());
-        let last_set_clipboard = Arc::new(AtomicU64::new(0));
+        let received_clipboards = Arc::new(ReceivedClipboards::default());
 
         let (scroll_inject_rx, scroll_inject_tx) = if config.server.scroll_destination {
             let (tx, rx) = std::sync::mpsc::sync_channel(SCROLL_INJECT_CAPACITY);
@@ -97,16 +97,17 @@ impl Transport {
             let server = TransportServer::new(
                 config.clone(),
                 key_store.clone(),
-                last_set_clipboard.clone(),
+                received_clipboards.clone(),
                 scroll_inject_tx,
                 active_state.clone(),
             );
+            let listener = server.bind()?;
             tokio::spawn({
                 let status = status.clone();
 
                 async move {
                     status.server_running.store(true, Ordering::Relaxed);
-                    if let Err(e) = server.run().await {
+                    if let Err(e) = server.run(listener).await {
                         let e = Error::wrap(e, ErrorKind::Network)
                             .with_msg("transport: Server error");
                         error(&e);
@@ -140,7 +141,7 @@ impl Transport {
             active_tx,
             active_state,
             status,
-            last_set_clipboard,
+            received_clipboards,
             cancel,
             scroll_inject_rx: Arc::new(Mutex::new(scroll_inject_rx)),
         })
@@ -183,8 +184,8 @@ impl Transport {
         self.status.server_running.load(Ordering::Relaxed)
     }
 
-    pub fn last_set_clipboard(&self) -> &AtomicU64 {
-        &self.last_set_clipboard
+    pub fn is_recent_peer_clipboard(&self, text: &str) -> bool {
+        self.received_clipboards.contains(text)
     }
 
     pub fn send_activate_request(&self) -> bool {

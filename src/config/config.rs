@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use serde_saphyr::{from_str, to_string};
 
 use crate::errors::{Result, Error, ErrorKind};
@@ -190,14 +191,20 @@ impl Config {
                 .with_msg("config: Failed to serialize")
             )?;
 
-        fs::write(&self.path, &contents)
-            .await
-            .map_err(|e| Error::wrap(e, ErrorKind::Write)
-                .with_msg("config: Failed to write file")
-                .with_ctx("path", self.path.display().to_string())
-            )?;
+        let write_error = |e| Error::wrap(e, ErrorKind::Write)
+            .with_msg("config: Failed to write file")
+            .with_ctx("path", self.path.display().to_string());
 
-        Ok(())
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&self.path)
+            .await
+            .map_err(write_error)?;
+        file.write_all(contents.as_bytes()).await.map_err(write_error)?;
+        file.flush().await.map_err(write_error)
     }
 
     pub fn is_modified(&self) -> bool {
