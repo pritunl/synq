@@ -1,13 +1,13 @@
 use std::sync::Mutex;
 
-use crate::errors::{trace, error};
+use crate::errors::{trace, info, warn, error};
 use tokio::sync::mpsc;
 use x11rb::{
     connection::Connection,
     protocol::{
         xfixes::{self, ConnectionExt as XFixesConnectionExt},
         xproto::{
-            Atom, ConnectionExt, CreateWindowAux, Window, WindowClass,
+            Atom, ConnectionExt, CreateWindowAux, WindowClass,
         },
         Event,
     },
@@ -23,7 +23,6 @@ pub struct ClipboardChange {
 
 struct XlibState {
     conn: RustConnection,
-    window: Window,
     clip_atom: Atom,
     last_timestamp: Mutex<u32>,
 }
@@ -67,16 +66,7 @@ impl XlibState {
                 .with_msg("clipboard: Failed to get atom reply"))?
             .atom;
 
-        Ok(Self {
-            conn,
-            window,
-            clip_atom,
-            last_timestamp: Mutex::new(0),
-        })
-    }
-
-    fn watch_clipboard(&self, tx: mpsc::Sender<ClipboardChange>) -> Result<()> {
-        let xfixes_version = self.conn.xfixes_query_version(5, 0)
+        let xfixes_version = conn.xfixes_query_version(5, 0)
             .map_err(|e| Error::wrap(e, ErrorKind::Network)
                 .with_msg("clipboard: Failed to query XFixes extension"))?
             .reply()
@@ -89,20 +79,26 @@ impl XlibState {
             xfixes_version.minor_version,
         );
 
-        self.conn.xfixes_select_selection_input(
-            self.window,
-            self.clip_atom,
+        // Checking the request reports a failed subscription before the watch loop starts
+        conn.xfixes_select_selection_input(
+            window,
+            clip_atom,
             xfixes::SelectionEventMask::SET_SELECTION_OWNER,
         )
         .map_err(|e| Error::wrap(e, ErrorKind::Network)
-            .with_msg("clipboard: Failed to select clipboard input"))?;
+            .with_msg("clipboard: Failed to select clipboard input"))?
+        .check()
+        .map_err(|e| Error::wrap(e, ErrorKind::Network)
+            .with_msg("clipboard: XFixes clipboard subscription failed"))?;
 
-        self.conn.flush()
-            .map_err(|e| Error::wrap(e, ErrorKind::Network)
-                .with_msg("clipboard: Failed to flush after selecting input"))?;
+        Ok(Self {
+            conn,
+            clip_atom,
+            last_timestamp: Mutex::new(0),
+        })
+    }
 
-        trace!("Started watching clipboard");
-
+    fn watch_clipboard(&self, tx: mpsc::Sender<ClipboardChange>) -> Result<()> {
         loop {
             let event = self.conn.wait_for_event()
                 .map_err(|e| Error::wrap(e, ErrorKind::Network)
@@ -140,9 +136,18 @@ impl XlibState {
 }
 
 pub async fn watch_clipboard() -> Result<mpsc::Receiver<ClipboardChange>> {
-    // Never fall back to the focus limited Xwayland clipboard on a Wayland session
     if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|value| !value.is_empty()) {
-        return super::wayland::watch_wayland_clipboard().await;
+        if let Some(rx) = super::wayland::try_watch_clipboard().await? {
+            return Ok(rx);
+        }
+
+        // GNOME offers no data control protocol but bridges the Xwayland clipboard
+        // without the focus limits of wlroots, other Wayland failures never fall back
+        warn!("Compositor does not support data control, using Xwayland clipboard");
+
+        return watch_x11_clipboard().await
+            .map_err(|e| Error::wrap(e, ErrorKind::Connection)
+                .with_msg("clipboard: No data control and Xwayland clipboard unavailable"));
     }
 
     watch_x11_clipboard().await
@@ -150,40 +155,19 @@ pub async fn watch_clipboard() -> Result<mpsc::Receiver<ClipboardChange>> {
 
 async fn watch_x11_clipboard() -> Result<mpsc::Receiver<ClipboardChange>> {
     let (tx, rx) = mpsc::channel(32);
-    let (init_tx, mut init_rx) = mpsc::channel::<Result<()>>(1);
+
+    let state = tokio::task::spawn_blocking(XlibState::new)
+        .await
+        .map_err(|e| Error::wrap(e, ErrorKind::Exec)
+            .with_msg("clipboard: Task join failed"))??;
+
+    info!("Started X11 clipboard watcher");
 
     tokio::task::spawn_blocking(move || {
-        trace!("Initializing X11 connection");
-
-        let state = match XlibState::new() {
-            Ok(state) => {
-                if let Err(e) = init_tx.blocking_send(Ok(())) {
-                    let e = Error::wrap(e, ErrorKind::Network)
-                        .with_msg("clipboard: Failed to send initialization success");
-                    error(&e);
-                }
-                state
-            }
-            Err(e) => {
-                if let Err(send_err) = init_tx.blocking_send(Err(e)) {
-                    let e = Error::wrap(send_err, ErrorKind::Network)
-                        .with_msg("clipboard: Failed to send initialization error");
-                    error(&e);
-                }
-                return;
-            }
-        };
-
-        trace!("Starting xlib clipboard watch loop");
-
         if let Err(e) = state.watch_clipboard(tx) {
             error(&e);
         }
     });
-
-    init_rx.recv().await
-        .ok_or_else(|| Error::new(ErrorKind::Network)
-            .with_msg("clipboard: Initialization channel closed unexpectedly"))??;
 
     Ok(rx)
 }

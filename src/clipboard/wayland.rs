@@ -7,10 +7,16 @@ use tokio::sync::mpsc;
 use wayland_client::{
     Connection, Dispatch, EventQueue, Proxy, QueueHandle,
     backend::WaylandError,
+    globals::{GlobalListContents, registry_queue_init},
     protocol::{wl_registry, wl_seat},
 };
+use wayland_protocols::ext::data_control::v1::client::{
+    ext_data_control_device_v1::{self, ExtDataControlDeviceV1},
+    ext_data_control_manager_v1::ExtDataControlManagerV1,
+    ext_data_control_offer_v1::{self, ExtDataControlOfferV1},
+};
 use wayland_protocols_wlr::data_control::v1::client::{
-    zwlr_data_control_device_v1::{self, ZwlrDataControlDeviceV1, EVT_DATA_OFFER_OPCODE},
+    zwlr_data_control_device_v1::{self, ZwlrDataControlDeviceV1},
     zwlr_data_control_manager_v1::ZwlrDataControlManagerV1,
     zwlr_data_control_offer_v1::{self, ZwlrDataControlOfferV1},
 };
@@ -25,10 +31,64 @@ struct OfferData {
     text: AtomicBool,
 }
 
+impl OfferData {
+    fn offered(&self, mime_type: &str) {
+        if is_text_mime(mime_type) {
+            self.text.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+// The ext protocol is the standardized wlr successor, compositors may offer either
+enum Manager {
+    Ext(ExtDataControlManagerV1),
+    Wlr(ZwlrDataControlManagerV1),
+}
+
+impl Manager {
+    fn protocol(&self) -> &'static str {
+        match self {
+            Manager::Ext(_) => ExtDataControlManagerV1::interface().name,
+            Manager::Wlr(_) => ZwlrDataControlManagerV1::interface().name,
+        }
+    }
+
+    fn get_data_device(&self, seat: &wl_seat::WlSeat, qh: &QueueHandle<WaylandState>) {
+        match self {
+            Manager::Ext(manager) => {
+                manager.get_data_device(seat, qh, ());
+            }
+            Manager::Wlr(manager) => {
+                manager.get_data_device(seat, qh, ());
+            }
+        }
+    }
+}
+
+enum Offer {
+    Ext(ExtDataControlOfferV1),
+    Wlr(ZwlrDataControlOfferV1),
+}
+
+impl Offer {
+    fn is_text(&self) -> bool {
+        let data = match self {
+            Offer::Ext(offer) => offer.data::<OfferData>(),
+            Offer::Wlr(offer) => offer.data::<OfferData>(),
+        };
+        data.is_some_and(|data| data.text.load(Ordering::SeqCst))
+    }
+
+    fn destroy(&self) {
+        match self {
+            Offer::Ext(offer) => offer.destroy(),
+            Offer::Wlr(offer) => offer.destroy(),
+        }
+    }
+}
+
 struct WaylandState {
-    manager: Option<ZwlrDataControlManagerV1>,
-    seat: Option<wl_seat::WlSeat>,
-    selection: Option<ZwlrDataControlOfferV1>,
+    selection: Option<Offer>,
     tx: mpsc::Sender<ClipboardChange>,
     ready: bool,
     finished: bool,
@@ -38,6 +98,7 @@ struct WaylandWatcher {
     connection: Connection,
     queue: EventQueue<WaylandState>,
     state: WaylandState,
+    protocol: &'static str,
 }
 
 fn is_text_mime(mime_type: &str) -> bool {
@@ -45,35 +106,53 @@ fn is_text_mime(mime_type: &str) -> bool {
         || matches!(mime_type, "UTF8_STRING" | "STRING" | "TEXT")
 }
 
-impl Dispatch<wl_registry::WlRegistry, ()> for WaylandState {
-    fn event(
-        state: &mut Self,
-        registry: &wl_registry::WlRegistry,
-        event: wl_registry::Event,
-        _: &(),
-        _: &Connection,
-        qh: &QueueHandle<Self>,
-    ) {
-        let wl_registry::Event::Global { name, interface, version } = event else {
-            return;
-        };
+impl WaylandState {
+    fn select(&mut self, offer: Option<Offer>) {
+        let is_text = offer.as_ref().is_some_and(Offer::is_text);
 
-        if interface == ZwlrDataControlManagerV1::interface().name
-            && state.manager.is_none()
-        {
-            // Version 1 covers the clipboard without primary selection events
-            state.manager = Some(registry.bind(name, version.min(1), qh, ()));
-        } else if interface == wl_seat::WlSeat::interface().name
-            && state.seat.is_none()
-        {
-            // First seat, same as arboard
-            state.seat = Some(registry.bind(name, version.min(2), qh, ()));
+        if let Some(previous) = self.selection.take() {
+            previous.destroy();
+        }
+        self.selection = offer;
+
+        // Receiver reads the selection on notify, a full queue has a pending read
+        if self.ready && is_text {
+            let _ = self.tx.try_send(ClipboardChange {});
         }
     }
 }
 
+impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for WaylandState {
+    fn event(
+        _: &mut Self,
+        _: &wl_registry::WlRegistry,
+        _: wl_registry::Event,
+        _: &GlobalListContents,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        // Globals are collected by registry_queue_init, later changes are not tracked
+    }
+}
+
 wayland_client::delegate_noop!(WaylandState: ignore wl_seat::WlSeat);
+wayland_client::delegate_noop!(WaylandState: ignore ExtDataControlManagerV1);
 wayland_client::delegate_noop!(WaylandState: ignore ZwlrDataControlManagerV1);
+
+impl Dispatch<ExtDataControlOfferV1, OfferData> for WaylandState {
+    fn event(
+        _: &mut Self,
+        _: &ExtDataControlOfferV1,
+        event: ext_data_control_offer_v1::Event,
+        data: &OfferData,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let ext_data_control_offer_v1::Event::Offer { mime_type } = event {
+            data.offered(&mime_type);
+        }
+    }
+}
 
 impl Dispatch<ZwlrDataControlOfferV1, OfferData> for WaylandState {
     fn event(
@@ -84,15 +163,40 @@ impl Dispatch<ZwlrDataControlOfferV1, OfferData> for WaylandState {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        if let zwlr_data_control_offer_v1::Event::Offer { mime_type } = event {
+            data.offered(&mime_type);
+        }
+    }
+}
+
+impl Dispatch<ExtDataControlDeviceV1, ()> for WaylandState {
+    fn event(
+        state: &mut Self,
+        _: &ExtDataControlDeviceV1,
+        event: ext_data_control_device_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         match event {
-            zwlr_data_control_offer_v1::Event::Offer { mime_type }
-                if is_text_mime(&mime_type) =>
-            {
-                data.text.store(true, Ordering::SeqCst);
+            ext_data_control_device_v1::Event::Selection { id } => {
+                state.select(id.map(Offer::Ext));
+            }
+            ext_data_control_device_v1::Event::PrimarySelection { id: Some(offer) } => {
+                // Primary selection is not synced, release the offer right away
+                offer.destroy();
+            }
+            ext_data_control_device_v1::Event::Finished => {
+                state.finished = true;
             }
             _ => {}
         }
     }
+
+    wayland_client::event_created_child!(WaylandState, ExtDataControlDeviceV1, [
+        ext_data_control_device_v1::EVT_DATA_OFFER_OPCODE
+            => (ExtDataControlOfferV1, OfferData::default()),
+    ]);
 }
 
 impl Dispatch<ZwlrDataControlDeviceV1, ()> for WaylandState {
@@ -106,19 +210,11 @@ impl Dispatch<ZwlrDataControlDeviceV1, ()> for WaylandState {
     ) {
         match event {
             zwlr_data_control_device_v1::Event::Selection { id } => {
-                let is_text = id.as_ref()
-                    .and_then(|offer| offer.data::<OfferData>())
-                    .is_some_and(|data| data.text.load(Ordering::SeqCst));
-
-                if let Some(previous) = state.selection.take() {
-                    previous.destroy();
-                }
-                state.selection = id;
-
-                // Receiver reads the selection on notify, a full queue has a pending read
-                if state.ready && is_text {
-                    let _ = state.tx.try_send(ClipboardChange {});
-                }
+                state.select(id.map(Offer::Wlr));
+            }
+            zwlr_data_control_device_v1::Event::PrimarySelection { id: Some(offer) } => {
+                // Primary selection is not synced, release the offer right away
+                offer.destroy();
             }
             zwlr_data_control_device_v1::Event::Finished => {
                 state.finished = true;
@@ -128,40 +224,44 @@ impl Dispatch<ZwlrDataControlDeviceV1, ()> for WaylandState {
     }
 
     wayland_client::event_created_child!(WaylandState, ZwlrDataControlDeviceV1, [
-        EVT_DATA_OFFER_OPCODE => (ZwlrDataControlOfferV1, OfferData::default()),
+        zwlr_data_control_device_v1::EVT_DATA_OFFER_OPCODE
+            => (ZwlrDataControlOfferV1, OfferData::default()),
     ]);
 }
 
 impl WaylandWatcher {
-    fn new(tx: mpsc::Sender<ClipboardChange>) -> Result<Self> {
+    fn new(tx: mpsc::Sender<ClipboardChange>) -> Result<Option<Self>> {
         let connection = Connection::connect_to_env()
             .map_err(|e| Error::wrap(e, ErrorKind::Connection)
                 .with_msg("clipboard: Failed to connect to Wayland display"))?;
 
-        let mut queue = connection.new_event_queue();
+        let (globals, mut queue) = registry_queue_init::<WaylandState>(&connection)
+            .map_err(|e| Error::wrap(e, ErrorKind::Connection)
+                .with_msg("clipboard: Failed to get Wayland globals"))?;
         let qh = queue.handle();
+
+        // Prefer the standard protocol, version 1 of either covers the clipboard selection
+        let manager = globals.bind(&qh, 1..=1, ()).map(Manager::Ext)
+            .or_else(|_| globals.bind(&qh, 1..=1, ()).map(Manager::Wlr));
+
+        // GNOME advertises neither protocol, the caller falls back to Xwayland
+        let Ok(manager) = manager else {
+            return Ok(None);
+        };
+
+        // First seat, same as arboard
+        let seat: wl_seat::WlSeat = globals.bind(&qh, 1..=2, ())
+            .map_err(|e| Error::wrap(e, ErrorKind::NotFound)
+                .with_msg("clipboard: No Wayland seat available"))?;
+
         let mut state = WaylandState {
-            manager: None,
-            seat: None,
             selection: None,
             tx,
             ready: false,
             finished: false,
         };
 
-        connection.display().get_registry(&qh, ());
-        queue.roundtrip(&mut state)
-            .map_err(|e| Error::wrap(e, ErrorKind::Connection)
-                .with_msg("clipboard: Failed to get Wayland globals"))?;
-
-        let manager = state.manager.as_ref()
-            .ok_or_else(|| Error::new(ErrorKind::NotFound)
-                .with_msg("clipboard: Compositor does not support wlr data control"))?;
-        let seat = state.seat.as_ref()
-            .ok_or_else(|| Error::new(ErrorKind::NotFound)
-                .with_msg("clipboard: No Wayland seat available"))?;
-
-        manager.get_data_device(seat, &qh, ());
+        manager.get_data_device(&seat, &qh);
         queue.roundtrip(&mut state)
             .map_err(|e| Error::wrap(e, ErrorKind::Connection)
                 .with_msg("clipboard: Failed to get Wayland data device"))?;
@@ -174,11 +274,12 @@ impl WaylandWatcher {
         // The initial selection from the roundtrip is a snapshot not a change
         state.ready = true;
 
-        Ok(Self {
+        Ok(Some(Self {
             connection,
             queue,
             state,
-        })
+            protocol: manager.protocol(),
+        }))
     }
 
     async fn run(mut self) -> Result<()> {
@@ -247,15 +348,19 @@ impl WaylandWatcher {
     }
 }
 
-pub(super) async fn watch_wayland_clipboard() -> Result<mpsc::Receiver<ClipboardChange>> {
+// None means the compositor has no data control protocol, other failures are errors
+pub(super) async fn try_watch_clipboard() -> Result<Option<mpsc::Receiver<ClipboardChange>>> {
     let (tx, rx) = mpsc::channel(32);
 
     let watcher = tokio::task::spawn_blocking(move || WaylandWatcher::new(tx))
         .await
         .map_err(|e| Error::wrap(e, ErrorKind::Exec)
             .with_msg("clipboard: Task join failed"))??;
+    let Some(watcher) = watcher else {
+        return Ok(None);
+    };
 
-    info!("Started Wayland clipboard watcher");
+    info!("Started Wayland clipboard watcher with {}", watcher.protocol);
 
     tokio::spawn(async move {
         if let Err(e) = watcher.run().await {
@@ -263,5 +368,5 @@ pub(super) async fn watch_wayland_clipboard() -> Result<mpsc::Receiver<Clipboard
         }
     });
 
-    Ok(rx)
+    Ok(Some(rx))
 }
